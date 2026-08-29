@@ -1,0 +1,6 @@
+build/
+vivado.*
+.Xil/
+*.log
+*.xpe
+xvlog.pb

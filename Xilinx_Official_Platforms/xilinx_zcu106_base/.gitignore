@@ -1,0 +1,8 @@
+platform_repo/
+sw/build/
+hw/build/
+vivado.*
+.Xil/
+*.log
+*.xpe
+xvlog.pb
