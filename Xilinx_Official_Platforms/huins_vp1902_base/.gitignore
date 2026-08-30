@@ -1,0 +1,14 @@
+platform_repo/
+sw/build/
+hw/build/
+vivado.*
+.Xil/
+*.log
+*.xpe
+xvlog.pb
+
+# Huins vendor files (kept local only)
+huins_mfp-vp1902_userguide.pdf
+vp1902s_top.tcl
+sdt_out/
+system.dtb
