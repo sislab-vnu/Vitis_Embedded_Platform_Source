@@ -2,7 +2,8 @@
 
 **Branch**: `2025.2-sislab` (site branch cut from upstream `2025.2`) · platform commit `f9c1432`
 **Host toolchain**: Vivado/Vitis 2025.2 (`/home/tools/xilinx/2025.2`) · Linux only
-**Board**: ZCU106 Rev1.0 at `172.16.10.34` (user `amd-edf`), running the AMD EDF image
+**Board**: ZCU106 Rev1.0 at `172.16.10.34` in the normal EDF boot, or
+`172.16.10.15` with the generated platform DTB (user `amd-edf`)
 
 ---
 
@@ -14,7 +15,9 @@
 | XSA build on Vivado 2025.2 | PASS |
 | Full platform build (`make all`) with common image | PASS — `.xpfm` produced, `platforminfo` correct |
 | Static DTB comparison vs running EDF DTB | PASS |
-| Boot-stack swap on real board | **FAILED** — board did not return; recovery path prepared |
+| Boot-stack swap on real board | **FAILED** — original EDF boot stack restored |
+| Kexec: Vitis kernel + PS-side platform DTB | PASS |
+| Hardware accelerator: Vitis `vadd` via XRT/zocl | **PASS — 4096/4096 values, repeated** |
 | QEMU smoke test (kernel + our DTB) | PASS (with QEMU-specific memory adaptation) |
 | QEMU FSBL/U-Boot boot-chain emulation | Not reachable with manual QEMU (needs Vitis launch machinery) |
 | `pyxrt` Python binding | Built + import-verified; pending on-board install |
@@ -104,7 +107,7 @@ Decompiled the running EDF DTB (`/sys/firmware/fdt`) and compared with our gener
 - CMA: EDF uses a DTB reserved-memory pool; ours uses `cma=1536M` in bootargs (platform convention)
 - Static memory node ≈ 4GB in both (dynamic DDR / U-Boot fixup handles the rest at boot)
 
-### 4.3 Boot-stack swap — FAILED (board down, recovery prepared)
+### 4.3 Boot-stack swap — FAILED (board recovered)
 
 Deployed to `/efi`:
 - `boot.bin` ← our BOOT.BIN (our FSBL [dynamic-DDR] + PMUFW + BL31 + our `system.dtb` @0x100000 + U-Boot; no bitstream — pre-synth platform). Original backed up as `boot.bin.edf-orig`
@@ -112,14 +115,112 @@ Deployed to `/efi`:
 - `extlinux/extlinux.conf` — boots the existing EDF `/Image` with our DTB
 - `RESTORE.txt` — recovery instructions (restore `boot.bin.edf-orig`)
 
-Result: board never came back (SSH + ping dead > 7 min). **Recovery requires physical access** (restore backup per `/efi/RESTORE.txt`).
+Result: board never came back (SSH + ping dead > 7 min). The original
+`boot.bin` was subsequently restored using `/efi/RESTORE.txt`; the board is
+back online and `/efi/boot.bin` is byte-identical to `boot.bin.edf-orig`.
 
 Suspected causes, most likely first:
 1. **FSBL dynamic-DDR**: `PSU_DYNAMIC_DDR_CONFIG_EN=1` reads the SODIMM SPD over I2C0 at boot; if that read fails, DRAM init breaks. The running EDF stack appears to boot this board with static DDR config.
 2. U-Boot boot-path mismatch (PetaLinux/common-image U-Boot vs EDF's EFI flow) — would be visible on serial.
 3. Kernel/DTB — least likely (structurally consistent; boots in QEMU).
 
-**Required next step**: capture the serial console (USB-UART) during a retry to pinpoint the hang.
+**Required next step for a full boot-stack retry**: capture the serial console
+(USB-UART) to pinpoint the hang.
+
+### 4.4 Kexec validation — PASS
+
+Kexec safely bypasses the unverified FSBL/U-Boot replacement while retaining
+the restored EDF boot stack as the watchdog/power-cycle fallback. The running
+EDF kernel has `CONFIG_KEXEC=y`, `CONFIG_KEXEC_FILE=y`, and kexec-tools 2.0.28.
+
+Control and isolation results:
+
+1. EDF kernel + running EDF DTB: kexec succeeds and returns at `172.16.10.34`.
+2. Vitis 6.12.40 kernel + unmodified platform DTB: watchdog reset to EDF.
+3. EDF kernel + unmodified platform DTB: watchdog reset to EDF, isolating the
+   failure to the static DTB rather than the Vitis kernel.
+4. EDF kernel + kexec-only platform DTB: succeeds at `172.16.10.15`.
+5. Vitis 6.12.40 kernel + kexec-only platform DTB: succeeds at
+   `172.16.10.15`.
+
+The initial pre-synth boot did not program the PL, but the generated platform
+DTB enables `axi_intc@80020000` and `zyxclmm_drm`. Probing that absent AXI
+fabric caused the reset. The kexec-only DTB differs from the generated
+`system.dtb` only by disabling those two nodes:
+
+```bash
+cp system.dtb zcu106-kexec.dtb
+fdtput -t s zcu106-kexec.dtb \
+  /pl-bus/interrupt-controller@80020000 status disabled
+fdtput -t s zcu106-kexec.dtb /zyxclmm_drm status disabled
+```
+
+The default automatic kexec syscall selection hung while loading the Vitis
+kernel and was recovered by the watchdog. Forcing the compatibility syscall
+with `-c` works:
+
+```bash
+sudo kexec -c -l /tmp/vitis-Image \
+  --dtb=/tmp/zcu106-kexec.dtb \
+  --append="root=PARTUUID=35bb9554-6997-4265-8ee0-ef5c72f03ef3 rw rootwait earlycon console=ttyPS0,115200 clk_ignore_unused uio_pdrv_genirq.of_id=generic-uio cma=1536M"
+cat /sys/kernel/kexec_loaded                 # 1
+sudo systemctl kexec
+```
+
+Verified after the handoff:
+
+- Kernel `6.12.40-xilinx-g31626ef92ff1`, model `ZynqMP ZCU106 RevA`
+- Four A53 cores, 4 GiB RAM, 1536 MiB CMA
+- Root mounted read-write from the EDF card's `mmcblk0p3` via PARTUUID
+- GEM/SSH working at `172.16.10.15`; FPGA manager present
+- `/efi/boot.bin` remains byte-identical to `boot.bin.edf-orig`
+
+This validates the Vitis kernel and PS-side platform DT on hardware. The EDF
+rootfs only has its original 6.18.10 modules, so matching 6.12.40 `zocl` and
+clock-helper modules were loaded from the 2025.2 common-image SDK for the
+accelerator test below. This mixed test remains systemd-degraded; a proper
+common-image rootfs is still required for a production boot test.
+
+### 4.5 Hardware `vadd` accelerator — PASS
+
+Built the Vitis sample `vadd` kernel with `v++ -c -t hw` and linked it with
+`v++ -l -t hw` against the generated
+`xilinx_zcu106_base_202520_1.xpfm`. Implementation met timing with WNS
+`0.810 ns`. The resulting xclbin UUID is
+`7af45008-541c-1e40-902d-605c63664b9c`.
+
+Two PS settings inherited from the EDF boot had to be corrected because kexec
+does not execute this platform's FSBL/`psu_init`:
+
+1. `PL0_REF` was configured at 99.99 MHz but disabled. A matching-kernel test
+   module enabled it through `zynqmp_pm_clock_enable(PL0_REF)`.
+2. `LPD_SLCR.AFI_FS` (`0xFF419000`) was `0x200`, selecting a 128-bit
+   `M_AXI_HPM0_LPD` interface. This design uses the 32-bit LPD interface to
+   drive the fallback AXI-Lite interconnect, so `psu_init_gpl.c` correctly
+   applies mask `0x300`, value `0x0`.
+
+The width mismatch was observable directly: CU register writes at offsets
+`0x1c`, `0x28`, and `0x34` read back as zero, while the 16-byte-aligned write
+at `0x10` worked. Consequently the kernel started with only its first pointer
+and a size of zero. Applying the generated `psu_init` value made all argument
+registers accessible. It also made `axi_intc@80020000` accessible and allowed
+the `irq-xilinx` driver to probe (`num_irq=32`, `edge=0x1`).
+
+With the bitstream loaded by zocl, the normal XRT/KDS host then passed:
+
+```text
+BO addresses: in1=0x1ffe0000 in2=0x1ffe4000 out=0x1ffe8000
+Mismatches: 0/4096
+TEST PASSED
+```
+
+The test passed repeatedly with matching XRT 2.20 userspace and once with the
+EDF XRT 2.23 userspace. It also passed without the temporary flat/polling
+`xrt.ini`. This validates xclbin programming, zocl device discovery, CMA BO
+allocation/synchronization, the kernel control path, `S_AXI_HP0_FPD` DDR
+traffic, and result verification. These manual clock/register steps are only
+needed for the kexec test: a normal boot through this platform's FSBL is
+expected to execute the generated PS initialization.
 
 ---
 
@@ -176,12 +277,11 @@ $CXX -std=c++17 -shared -fPIC -fvisibility=hidden -O2 \
 
 ## 7. Open items
 
-1. **Restore the board** (`/efi/boot.bin.edf-orig` → `boot.bin`, per `/efi/RESTORE.txt`)
-2. Capture serial console during a boot retry → confirm whether the hang is in FSBL (dynamic DDR) or U-Boot
-3. If dynamic DDR is the culprit: prepare a static-8GB DDR variant (`PSU_DYNAMIC_DDR_CONFIG_EN=0` + static training parameters) and retry the swap
+1. Capture serial console during a full boot-stack retry to distinguish an FSBL dynamic-DDR failure from a U-Boot failure
+2. If dynamic DDR is the culprit: prepare a static-8GB DDR variant (`PSU_DYNAMIC_DDR_CONFIG_EN=0` + static training parameters) and retry the swap
+3. Boot the Vitis kernel with its matching 2025.2 common-image rootfs
 4. Install `pyxrt` on the board; verify `python3 -c "import pyxrt; pyxrt.device(0)"` with `zocl` loaded
-5. End-to-end application test: vadd via `v++` (`-t hw`) against the platform, load xclbin with `fpgautil`, run Python host
-6. Commit this document
+5. Automate the kexec-only `PL0_REF` enable and generated `LPD_SLCR.AFI_FS` mask write if this mixed EDF/common-image test becomes a maintained workflow
 
 ## 8. Artifact map (host)
 
@@ -190,6 +290,9 @@ $CXX -std=c++17 -shared -fPIC -fvisibility=hidden -O2 \
 | `Xilinx_Official_Platforms/xilinx_zcu106_base/` | platform sources (committed) |
 | `platform_repo/xilinx_zcu106_base_202520_1/export/` | built platform (`.xpfm`) |
 | `/tmp/opencode/qemu_run/` | QEMU boot scripts + logs (`qemu_kernel.sh`, `arm.log`) |
+| `/tmp/opencode/zcu106-kexec.dtb` | kexec-only DTB with unprogrammed PL nodes disabled |
+| `/tmp/opencode/zcu106_vadd/` | `vadd.xclbin`, host diagnostics, clock helper, overlays, and build reports |
+| `/storage/zcu106-vadd/` | persistent on-board copy of the accelerator test artifacts |
 | `/tmp/opencode/XRT/` + `pyxrt…so` | XRT source + built Python module |
 | `/home/admin/sysroot-zcu106/` | Yocto SDK sysroot (for cross-builds) |
 | `/home/tools/xilinx/prebuilt/xilinx-zynqmp-common-v2025.2/` | common image (Image, rootfs, boot files, sdk.sh) |
