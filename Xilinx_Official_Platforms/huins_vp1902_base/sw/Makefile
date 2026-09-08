@@ -8,7 +8,7 @@
 include ../platform.mk
 
 all linux:
-	$(MAKE) -C prebuilt_linux all
+	$(MAKE) -C prebuilt_linux all XSA="$(XSA)" PREBUILT_LINUX_PATH="$(PREBUILT_LINUX_PATH)"
 
 clean:
 	$(MAKE) -C prebuilt_linux clean;

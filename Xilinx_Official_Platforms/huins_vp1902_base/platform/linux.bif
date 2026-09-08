@@ -1,0 +1,11 @@
+/******************************************************************************
+* Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
+* SPDX-License-Identifier: MIT
+******************************************************************************/
+/* Keep the U-Boot control DT separate from the Linux runtime DT. */
+the_ROM_image:
+{
+  { load=0x1000, file=<dtb,boot/u-boot.dtb> }
+  { core=a72-0, exception_level=el-3, trustzone, file=<atf,boot/bl31.elf> }
+  { core=a72-0, exception_level=el-2, load=0x8000000, file=<uboot,boot/u-boot.elf> }
+}

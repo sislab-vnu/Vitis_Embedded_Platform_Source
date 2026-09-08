@@ -10,5 +10,8 @@ xvlog.pb
 # Huins vendor files (kept local only)
 huins_mfp-vp1902_userguide.pdf
 vp1902s_top.tcl
+ref/
 sdt_out/
+sdt_out_*/
 system.dtb
+system-*.dtb

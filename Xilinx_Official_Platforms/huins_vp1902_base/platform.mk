@@ -14,7 +14,6 @@ XSCT    = $(XILINX_VITIS)/bin/xsct
 #platform specific
 PLATFORM = huins_vp1902_base
 CPU_ARCH = a72
-BOARD    = versal-vpk180-reva
 CORE     = psv_cortexa72_0
 
 #versioning
@@ -36,7 +35,9 @@ PRE_SYNTH       ?= TRUE
 SW_DIR           = $(TOP_DIR)/sw/build
 BOOT_DIR         = $(SW_DIR)/platform/boot
 IMAGE_DIR        = $(SW_DIR)/platform/image
-DTB_FILE         = $(BOOT_DIR)/system.dtb
+UBOOT_DTB_FILE   = $(BOOT_DIR)/u-boot.dtb
+LINUX_DTB_FILE   = $(IMAGE_DIR)/system.dtb
+DTB_FILE         = $(LINUX_DTB_FILE)
 BOOT_IMAGE       = $(BOOT_DIR)/BOOT.BIN
 SW_FILES         = $(IMAGE_DIR)/boot.scr $(BOOT_DIR)/u-boot.elf $(BOOT_DIR)/bl31.elf
 BOOT_FILES       = u-boot.elf bl31.elf
@@ -44,27 +45,34 @@ BOOT_FILES       = u-boot.elf bl31.elf
 #platform related
 PLATFORM_NAME    = $(PLATFORM)_$(VERSION)
 PLATFORM_SW_SRC  = $(TOP_DIR)/platform
+PLATFORM_BIF     = $(PLATFORM_SW_SRC)/linux.bif
 PLATFORM_DIR      = $(TOP_DIR)/platform_repo
 
 #flow related
-PREBUILT_LINUX_PATH ?= /opt/xilinx/platform/xilinx-versal-common-v2025.2
 ifneq ($(wildcard $(TOP_DIR)/xilinx-versal-common-v2025.2),)
-	PREBUILT_LINUX_PATH ?= $(TOP_DIR)/xilinx-versal-common-v2025.2
+  PREBUILT_LINUX_PATH ?= $(TOP_DIR)/xilinx-versal-common-v2025.2
+else
+  PREBUILT_LINUX_PATH ?= /opt/xilinx/platform/xilinx-versal-common-v2025.2
 endif
 
-#Absolute paths
-# Getting Absolute paths
-ifneq ("$(wildcard $(XSA))","")
-  XSA_ABS ?= $(realpath $(XSA))
-  override XSA := $(realpath $(XSA_ABS))
+# The 2025.2 common image can be replaced with a platform-specific U-Boot.
+UBOOT_ELF ?= $(PREBUILT_LINUX_PATH)/u-boot.elf
+
+# Keep user-supplied relative paths valid in recursive hardware/software builds.
+ifneq ($(origin XSA),file)
+  ifneq ($(wildcard $(XSA)),)
+    override XSA := $(realpath $(XSA))
+  endif
 endif
-ifneq ("$(wildcard $(HW_EMU_XSA_ABS))","")
-  HW_EMU_XSA_ABS ?= $(realpath $(HW_EMU_XSA))
-  override HW_EMU_XSA := $(realpath $(HW_EMU_XSA_ABS))
+ifneq ($(origin PREBUILT_LINUX_PATH),file)
+  ifneq ($(wildcard $(PREBUILT_LINUX_PATH)),)
+    override PREBUILT_LINUX_PATH := $(realpath $(PREBUILT_LINUX_PATH))
+  endif
 endif
-ifneq ("$(wildcard $(PREBUILT_LINUX_PATH_ABS))","")
-  PREBUILT_LINUX_PATH_ABS ?= $(realpath $(PREBUILT_LINUX_PATH))
-  override PREBUILT_LINUX_PATH := $(realpath $(PREBUILT_LINUX_PATH_ABS))
+ifneq ($(origin UBOOT_ELF),file)
+  ifneq ($(wildcard $(UBOOT_ELF)),)
+    override UBOOT_ELF := $(realpath $(UBOOT_ELF))
+  endif
 endif
 
 #common targets

@@ -7,9 +7,11 @@ CWD = $(shell readlink -f .)
 TOP_DIR = $(CWD)/../../
 include $(TOP_DIR)/platform.mk
 
-SYSTEM_USER_DTSI = $(CWD)/user_dts/system-user.dtsi
+SYSTEM_USER_DTSI       = $(CWD)/user_dts/system-user.dtsi
+UBOOT_SYSTEM_USER_DTSI = $(CWD)/user_dts/system-user-uboot.dtsi
 #SYSTEM_CONF_DTS  = $(CWD)/user_dts/system-conf.dtsi
 PDI_FILE         = $(SW_DIR)/hw.pdi
+HW_PDI          ?= $(dir $(XSA))hw.pdi
 DTB_PATH         = $(CWD)/dtb_gen
 
 
@@ -18,32 +20,46 @@ DTB_PATH         = $(CWD)/dtb_gen
 $(XSA):
 	$(MAKE) -C $(TOP_DIR) xsa
 
-dtb: $(DTB_FILE)
+dtb: $(UBOOT_DTB_FILE) $(LINUX_DTB_FILE)
 
-$(DTB_FILE): check-vitis $(XSA)
+$(UBOOT_DTB_FILE): $(XSA) $(UBOOT_SYSTEM_USER_DTSI) $(DTB_PATH)/Makefile | check-vitis
 	$(info "Generating SW Artifacts...")
 	@if [ ! -d $(BOOT_DIR) ]; then mkdir -p $(BOOT_DIR); fi
-	$(info "DTB generation started using stdgen+lopper")
+	$(info "U-Boot DTB generation started using sdtgen+lopper")
 
-	$(MAKE) -C dtb_gen all
+	$(MAKE) -C dtb_gen all XSA="$(XSA)" \
+		USER_DTSI="$(UBOOT_SYSTEM_USER_DTSI)" \
+		SDT_OUT="sdt_out_uboot" DTB_OUT="system-uboot.dtb"
 
-	@if [ ! -f  $(DTB_PATH)/system.dtb ]; then echo -e "ERROR: Device tree generation failed\n"; exit 1; fi
-	cp $(DTB_PATH)/system.dtb $(DTB_FILE) -v
+	@if [ ! -f $(DTB_PATH)/system-uboot.dtb ]; then echo -e "ERROR: U-Boot device tree generation failed\n"; exit 1; fi
+	cp $(DTB_PATH)/system-uboot.dtb $(UBOOT_DTB_FILE) -v
+
+$(LINUX_DTB_FILE): $(XSA) $(SYSTEM_USER_DTSI) $(DTB_PATH)/Makefile | check-vitis
+	$(info "Generating SW Artifacts...")
+	@if [ ! -d $(IMAGE_DIR) ]; then mkdir -p $(IMAGE_DIR); fi
+	$(info "Linux DTB generation started using sdtgen+lopper")
+
+	$(MAKE) -C dtb_gen all XSA="$(XSA)" \
+		USER_DTSI="$(SYSTEM_USER_DTSI)" \
+		SDT_OUT="sdt_out_linux" DTB_OUT="system-linux.dtb"
+
+	@if [ ! -f $(DTB_PATH)/system-linux.dtb ]; then echo -e "ERROR: Linux device tree generation failed\n"; exit 1; fi
+	cp $(DTB_PATH)/system-linux.dtb $(LINUX_DTB_FILE) -v
 
 sw_comp: $(SW_FILES)
 
-$(SW_FILES): $(DTB_FILE)
+$(SW_FILES): $(UBOOT_DTB_FILE) $(LINUX_DTB_FILE) $(UBOOT_ELF)
 	mkdir -p $(IMAGE_DIR)
 	cp -f $(PREBUILT_LINUX_PATH)/boot.scr ${IMAGE_DIR}/boot.scr
-	$(foreach BOOT_FILE,$(BOOT_FILES),cp -f $(PREBUILT_LINUX_PATH)/$(BOOT_FILE) $(BOOT_DIR) ;)
+	cp -f $(UBOOT_ELF) $(BOOT_DIR)/u-boot.elf
+	$(foreach BOOT_FILE,$(filter-out u-boot.elf,$(BOOT_FILES)),cp -f $(PREBUILT_LINUX_PATH)/$(BOOT_FILE) $(BOOT_DIR) ;)
 
-all: check-vitis check-prebuilt $(SW_FILES)
+all: check-vitis check-prebuilt $(SW_FILES) $(UBOOT_DTB_FILE) $(LINUX_DTB_FILE)
 
 $(PDI_FILE): $(XSA)
 	mkdir -p $(SW_DIR)
-	cp -f $(XSA) $(SW_DIR)/system.xsa
-	@echo "openhw $(SW_DIR)/system.xsa" >> $(SW_DIR)/extract
-	$(XSCT) $(SW_DIR)/extract
+	@if [ ! -f "$(HW_PDI)" ]; then echo "ERROR: Post-implementation PDI not found at $(HW_PDI)"; exit 1; fi
+	cp -f $(HW_PDI) $(PDI_FILE)
 
 bootimage: $(BOOT_IMAGE)
 
@@ -55,4 +71,3 @@ clean:
 	${RM} -r $(SW_DIR)
 	${RM} -r $(PLATFORM_DIR)
 	$(MAKE) -C dtb_gen clean ;
-

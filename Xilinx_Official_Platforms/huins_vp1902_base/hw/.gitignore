@@ -1,3 +1,5 @@
 vck190_base
 vivado.*
 .Xil/
+vivado_*
+*.jou

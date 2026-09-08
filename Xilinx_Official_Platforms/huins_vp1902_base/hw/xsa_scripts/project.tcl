@@ -25,7 +25,9 @@
 set list_projs [get_projects -quiet]
 if { $list_projs eq "" } {
     set projName "my_project"
-    create_project $projName ./$projName -part xcvp1902-vsva6865-2MP-e-S
+    create_project -force $projName ./$projName -part xcvp1902-vsva6865-2MP-e-S
+    add_files -fileset constrs_1 -norecurse ../xsa_scripts/huins_vp1902_ddr.xdc
+    add_files -fileset constrs_1 -norecurse ../xsa_scripts/huins_vp1902_io.xdc
   }
 
 

@@ -31,12 +31,15 @@ if { $argc > 1} {
 }
 if {$pre_synth} {
   set_property platform.platform_state "pre_synth" [current_project]
+  # Versal boot requires the PS/PMC initialization data carried by the PDI.
+  set_param platform.forceEnablePreSynthPDI true
   write_hw_platform -hw -force -file hw.xsa
 } else {
   launch_runs impl_1 -to_step write_bitstream -jobs 16
   wait_on_run impl_1
   file mkdir hw
   write_hw_platform -hw -force -include_bit -file hw.xsa
+  file copy -force ./my_project/my_project.runs/impl_1/vitis_design_wrapper.pdi hw.pdi
 }
 
 #generate README.hw

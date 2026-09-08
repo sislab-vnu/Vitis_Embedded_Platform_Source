@@ -8,63 +8,18 @@
  * Adding directly contents of system-conf file until CR-1139794 is fixed
  */
 / {
-        chosen {
-                bootargs = "console=ttyAMA0  earlycon=pl011,mmio32,0xFF000000,115200n8 clk_ignore_unused root=/dev/mmcblk0p2 rw rootwait cma=512M";
-                stdout-path = "serial0:115200n8";
-        };
-};
-
-/ {
 	chosen {
-		stdout-path = "serial0:115200";
+		bootargs = "console=ttyAMA0 earlycon=pl011,mmio32,0xFF000000,115200n8 clk_ignore_unused root=PARTUUID=6812d01f-f2ab-48a6-b218-8f56f2f72dad rw rootwait cma=512M";
+		stdout-path = "serial0:115200n8";
 	};
-
-	reserved-memory {
-                #address-cells = <2>;
-                #size-cells = <2>;
-                ranges;
-                pl_ddr: buffer@0 {
-                        no-map;
-                        reg = <0x08 0x00 0x01 0x80000000>;
-                };
-                lpddr_memory: buffer@1 {
-                        no-map;
-                        reg = <0x500 0x0 0x2 0x0>;
-                };
-        }; 
 };
 
-&amba_pl {
-	/delete-node/ interrupt-controller@a4040000;
-	/delete-node/ interrupt-controller@a4050000;
+&sdhci1 {
+	bus-width = <4>;
+	xlnx,bus-width = <4>;
+	disable-wp;
+	no-1-8-v;
+	max-frequency = <25000000>;
+	clk-phase-sd-hs = <0>, <0>;
+	resets = <&versal_reset 0x0c104030>; /* VERSAL_RST_SDIO_1 */
 };
-
-&amba {
-axi_intc_cascaded_1: interrupt-controller@a4040000 {
-			#interrupt-cells = <2>;
-			clock-names = "s_axi_aclk";
-			clocks = <&misc_clk_0>;
-			compatible = "xlnx,axi-intc-4.1", "xlnx,xps-intc-1.00.a";
-			interrupt-controller ;
-			interrupt-names = "irq";
-			interrupt-parent = <&axi_intc_parent>;
-			interrupts = <31 2>;
-			reg = <0x0 0xa4040000 0x0 0x10000>;
-			xlnx,kind-of-intr = <0x00>;
-			xlnx,num-intr-inputs = <0x20>;
-		};
-		axi_intc_parent: interrupt-controller@a4050000 {
-			#interrupt-cells = <2>;
-			clock-names = "s_axi_aclk";
-			clocks = <&misc_clk_0>;
-			compatible = "xlnx,axi-intc-4.1", "xlnx,xps-intc-1.00.a";
-			interrupt-controller ;
-			interrupt-names = "irq";
-			interrupt-parent = <&gic_a72>;
-			interrupts = <0 84 4>;
-			reg = <0x0 0xa4050000 0x0 0x10000>;
-			xlnx,kind-of-intr = <0x0>;
-			xlnx,num-intr-inputs = <0x20>;
-		};
-};
-

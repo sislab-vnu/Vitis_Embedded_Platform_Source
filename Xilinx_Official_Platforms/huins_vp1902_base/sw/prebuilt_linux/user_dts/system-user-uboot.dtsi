@@ -1,0 +1,18 @@
+/******************************************************************************
+* Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
+* SPDX-License-Identifier: MIT
+******************************************************************************/
+/* U-Boot control DTB embedded in BOOT.BIN. */
+/ {
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&sdhci1 {
+	bus-width = <4>;
+	xlnx,bus-width = <4>;
+	disable-wp;
+	no-1-8-v;
+	resets = <&versal_reset 0x0c104030>; /* VERSAL_RST_SDIO_1 */
+};

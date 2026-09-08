@@ -5,7 +5,6 @@
 #******************************************************************************
 import vitis
 import argparse
-import os
 
 print("Platform generation")
 parser = argparse.ArgumentParser()
@@ -14,6 +13,7 @@ parser.add_argument("--platform_name", type=str, dest="platform_name")
 parser.add_argument("--emu_xsa_path", type=str, dest="emu_xsa_path")
 parser.add_argument("--platform_out", type=str, dest="platform_out")
 parser.add_argument("--boot_dir_path", type=str, dest="boot_dir_path")
+parser.add_argument("--bif", type=str, dest="bif")
 parser.add_argument("--img_dir_path", type=str, dest="img_dir_path")
 parser.add_argument("--dtb", type=str, dest="dtb")
 
@@ -23,17 +23,24 @@ platform_name=args.platform_name
 emu_xsa_path=args.emu_xsa_path
 platform_out=args.platform_out
 boot_dir_path=args.boot_dir_path
+bif=args.bif
 img_dir_path=args.img_dir_path
 dtb=args.dtb
 print('args',args)
 client = vitis.create_client()
-#client.update_workspace(path=os.getcwd()/test)
-
 client.update_workspace(path=platform_out)
-#client.update_workspace("/proj/xhdhdstaff3/swbhardw/platform/2025.2/sysgen_vck190_base_bdc/xilinx_vck190_base_bdc_python_cli/temp")
 
-platform = client.create_platform_component(name = platform_name, hw_design = xsa_path, no_boot_bsp = True, emu_design = emu_xsa_path, generate_dtb = False,
- desc = " A base platform targeting the Huins MFP-VP1902-S custom board (Versal Premium xcvp1902). Built from the Huins reference design with ps_wizard + axi_noc (2x DDR4 SODIMM); no AI Engines (Versal Premium Gen1). Site addition on the 2025.2-sislab branch." )
+platform_args = {
+    "name": platform_name,
+    "hw_design": xsa_path,
+    "no_boot_bsp": True,
+    "generate_dtb": False,
+    "desc": " A base platform targeting the Huins MFP-VP1902-S custom board (Versal Premium xcvp1902). Built from the Huins reference design with ps_wizard + axi_noc (2x DDR4 SODIMM); no AI Engines (Versal Premium Gen1). Site addition on the 2025.2-sislab branch.",
+}
+if emu_xsa_path:
+    platform_args["emu_design"] = emu_xsa_path
+
+platform = client.create_platform_component(**platform_args)
 
 
 platform = client.get_component(name = platform_name)
@@ -44,9 +51,8 @@ domain = platform.add_domain(cpu = "psv_cortexa72",os = "linux",name = "xrt",dis
 domain.set_sd_dir(path = img_dir_path)
 domain = platform.get_domain(name="xrt")  
 status = domain.set_boot_dir(path=boot_dir_path)
-status = domain.generate_bif()  
+status = domain.set_bif(path=bif)
 
 status = domain.set_dtb(path=dtb) # used to bypass sdtgen from generate platform
 
 status = platform.build()
-

@@ -290,17 +290,6 @@ proc create_root_design { parentCell } {
 
 
 
-
-  # Create ports
-  set F_LED [ create_bd_port -dir O -from 11 -to 0 F_LED ]
-  set pl0_resetn_0 [ create_bd_port -dir O -type rst pl0_resetn_0 ]
-  set pl1_resetn_0 [ create_bd_port -dir O -type rst pl1_resetn_0 ]
-  set C2_init_calib_complete [ create_bd_port -dir O C2_init_calib_complete ]
-  set HDMI_IDT_8T49N241_LOL_IN [ create_bd_port -dir I HDMI_IDT_8T49N241_LOL_IN ]
-  set HDMI_TX_HPD_IN [ create_bd_port -dir I HDMI_TX_HPD_IN ]
-  set HDMI_TX_EN_OUT [ create_bd_port -dir O -from 0 -to 0 HDMI_TX_EN_OUT ]
-  set hsdp_rx_chup [ create_bd_port -dir O hsdp_rx_chup ]
-
   # Create instance: axi_noc_0, and set properties
   set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
   set_property -dict [list \
@@ -896,7 +885,6 @@ proc create_root_design { parentCell } {
     CONFIG.PS_PMC_CONFIG(PS_LPDMA7_COHERENCY) {0} \
     CONFIG.PS_PMC_CONFIG(PS_LPDMA7_ROUTE_THROUGH_FPD) {0} \
     CONFIG.PS_PMC_CONFIG(PS_LPD_AXI_NOC_DATA_WIDTH) {128} \
-    CONFIG.PS_PMC_CONFIG(PS_LPD_AXI_PL_DATA_WIDTH) {128} \
     CONFIG.PS_PMC_CONFIG(PS_LPD_DMA_CHANNEL_ENABLE) {CH0 0 CH1 0 CH2 0 CH3 0 CH4 0 CH5 0 CH6 0 CH7 0} \
     CONFIG.PS_PMC_CONFIG(PS_LPD_DMA_CH_TZ) {CH0 NonSecure CH1 NonSecure CH2 NonSecure CH3 NonSecure CH4 NonSecure CH5 NonSecure CH6 NonSecure CH7 NonSecure} \
     CONFIG.PS_PMC_CONFIG(PS_LPD_DMA_ENABLE) {0} \
@@ -1024,7 +1012,7 @@ MIO} \
     CONFIG.PS_PMC_CONFIG(PS_USE_FTM_GPO) {0} \
     CONFIG.PS_PMC_CONFIG(PS_USE_HSDP_PL) {0} \
     CONFIG.PS_PMC_CONFIG(PS_USE_LPD_AXI_NOC0) {1} \
-    CONFIG.PS_PMC_CONFIG(PS_USE_LPD_AXI_PL) {1} \
+    CONFIG.PS_PMC_CONFIG(PS_USE_LPD_AXI_PL) {0} \
     CONFIG.PS_PMC_CONFIG(PS_USE_MJTAG_TCK_TIE_OFF) {0} \
     CONFIG.PS_PMC_CONFIG(PS_USE_NOC_AXI_FPD0) {0} \
     CONFIG.PS_PMC_CONFIG(PS_USE_NOC_AXI_FPD1) {0} \
@@ -1324,11 +1312,6 @@ MIO} \
   # Create instance: ilconstant_2, and set properties
   set ilconstant_2 [ create_bd_cell -type inline_hdl -vlnv xilinx.com:inline_hdl:ilconstant:1.0 ilconstant_2 ]
 
-  # Create instance: rst_processor_1_100M, and set properties
-  set rst_processor_1_100M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_processor_1_100M ]
-  set_property CONFIG.C_NUM_INTERCONNECT_ARESETN {1} $rst_processor_1_100M
-
-
   # Create instance: clk_wizard_2, and set properties
 
 
@@ -1347,14 +1330,6 @@ MIO} \
 
   # Create instance: hdmi_hier_0
 
-  # Create instance: smartconnect_lpd, and set properties
-  set smartconnect_lpd [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_lpd ]
-  set_property -dict [list \
-    CONFIG.NUM_CLKS {2} \
-    CONFIG.NUM_SI {1} \
-  ] $smartconnect_lpd
-
-
   # Create instance: hsdp_soft_aurora
 
   # Create instance: axi_dbg_hub_0, and set properties
@@ -1370,7 +1345,6 @@ MIO} \
   connect_bd_intf_net -intf_net ps_wizard_0_I2C0 [get_bd_intf_ports I2C0] [get_bd_intf_pins ps_wizard_0/I2C0]
   connect_bd_intf_net -intf_net ps_wizard_0_I2C1 [get_bd_intf_ports I2C1] [get_bd_intf_pins ps_wizard_0/I2C1]
   connect_bd_intf_net -intf_net ps_wizard_0_LPD_AXI_NOC0 [get_bd_intf_pins axi_noc_0/S05_AXI] [get_bd_intf_pins ps_wizard_0/LPD_AXI_NOC0]
-  connect_bd_intf_net -intf_net ps_wizard_0_LPD_AXI_PL [get_bd_intf_pins ps_wizard_0/LPD_AXI_PL] [get_bd_intf_pins smartconnect_lpd/S00_AXI]
   connect_bd_intf_net -intf_net ps_wizard_0_PMC_AXI_NOC0 [get_bd_intf_pins axi_noc_0/S00_AXI] [get_bd_intf_pins ps_wizard_0/PMC_AXI_NOC0]
   connect_bd_intf_net -intf_net ps_wizard_0_UART0 [get_bd_intf_ports UART0] [get_bd_intf_pins ps_wizard_0/UART0]
   connect_bd_intf_net -intf_net ps_wizard_0_UART1 [get_bd_intf_ports UART1] [get_bd_intf_pins ps_wizard_0/UART1]
@@ -1393,8 +1367,6 @@ MIO} \
   [get_bd_pins axi_noc_0/aclk4]
   connect_bd_net -net ps_wizard_0_lpd_axi_noc0_clk  [get_bd_pins ps_wizard_0/lpd_axi_noc0_clk] \
   [get_bd_pins axi_noc_0/aclk5]
-  connect_bd_net -net ps_wizard_0_pl1_resetn  [get_bd_pins ps_wizard_0/pl1_resetn] \
-  [get_bd_ports pl1_resetn_0]
   connect_bd_net -net ps_wizard_0_pl3_ref_clk  [get_bd_pins ps_wizard_0/pl3_ref_clk] \
   [get_bd_pins axi_noc_0/aclk9]
   connect_bd_net -net ps_wizard_0_pmc_axi_noc0_clk  [get_bd_pins ps_wizard_0/pmc_axi_noc0_clk] \
@@ -1486,39 +1458,38 @@ MIO} \
     [get_bd_pins proc_sys_reset_3x/dcm_locked] [get_bd_pins proc_sys_reset_4x/dcm_locked] \
     [get_bd_pins proc_sys_reset_5x/dcm_locked] [get_bd_pins proc_sys_reset_6x/dcm_locked]
   connect_bd_net -net ps_wizard_0_pl0_resetn [get_bd_pins ps_wizard_0/pl0_resetn] \
-    [get_bd_ports pl0_resetn_0] [get_bd_pins proc_sys_reset_0/ext_reset_in] \
+    [get_bd_pins proc_sys_reset_0/ext_reset_in] \
     [get_bd_pins proc_sys_reset_1/ext_reset_in] [get_bd_pins proc_sys_reset_2/ext_reset_in] \
     [get_bd_pins proc_sys_reset_3x/ext_reset_in] [get_bd_pins proc_sys_reset_4x/ext_reset_in] \
     [get_bd_pins proc_sys_reset_5x/ext_reset_in] [get_bd_pins proc_sys_reset_6x/ext_reset_in]
 
   # --- Remove the NoC's PL-facing master port (PL DDR ddr4_c2 was stripped)
   set_property -dict [list CONFIG.NUM_MI {0}] $axi_noc_0
-  # --- Kernel control path: widen axi_smc (FPD GP) to 16 masters, single clock
-  set_property -dict [list CONFIG.NUM_MI {16} CONFIG.NUM_CLKS {1}] $axi_smc
+  # --- Kernel control path: keep only the fixed interrupt-controller master.
+  # Vitis expands the PFM-declared M01..M15 ports when linking kernels.
+  set_property -dict [list CONFIG.NUM_MI {1} CONFIG.NUM_CLKS {1}] $axi_smc
   # disable HSDP debug link (GT clocking stripped with the reference design)
   set_property -dict [list CONFIG.PS_PMC_CONFIG(PS_HSDP_INGRESS_TRAFFIC) {JTAG} \
     CONFIG.PS_PMC_CONFIG(PS_HSDP_SAME_EGRESS_AS_INGRESS_TRAFFIC) {1}] $ps_wizard_0
   # unified pl0_ref_clk net (100MHz) for control path + NoC aclks
   connect_bd_net -net ps_wizard_0_pl0_ref_clk [get_bd_pins ps_wizard_0/pl0_ref_clk] \
     [get_bd_pins clk_wizard_0/clk_in1] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
-    [get_bd_pins proc_sys_reset_1/slowest_sync_clk] [get_bd_pins rst_processor_1_100M/slowest_sync_clk] \
+    [get_bd_pins proc_sys_reset_1/slowest_sync_clk] \
     [get_bd_pins axi_noc_0/aclk6] [get_bd_pins axi_noc_0/aclk7] [get_bd_pins axi_noc_0/aclk8] \
     [get_bd_pins axi_noc_0/aclk10] [get_bd_pins axi_noc_0/aclk11] \
-    [get_bd_pins axi_smc/aclk] [get_bd_pins smartconnect_lpd/aclk] [get_bd_pins smartconnect_lpd/aclk1] \
-    [get_bd_pins ps_wizard_0/fpd_axi_pl_aclk] [get_bd_pins ps_wizard_0/lpd_axi_pl_aclk] \
+    [get_bd_pins axi_smc/aclk] [get_bd_pins ps_wizard_0/fpd_axi_pl_aclk] \
     [get_bd_pins axi_intc_0/s_axi_aclk]
-  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn [get_bd_pins smartconnect_lpd/aresetn]
   connect_bd_net -net hsdp_ref_clk [get_bd_pins clk_wizard_0/clk_out6] [get_bd_pins ps_wizard_0/hsdp_ref_clk]
 
   # --- Kernel interrupts: AXI INTC (32) -> pl_ps_irq0
   set axi_intc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_intc:4.1 axi_intc_0 ]
-  set_property -dict [list CONFIG.CASCADE_CASCADE_LEVEL {0} CONFIG.CASCADE_TYPE {Enable} \
-    CONFIG.IRQ_LEVEL {1} CONFIG.NUM_SYNC_FF {2} CONFIG.SENSE {Edge} ] $axi_intc_0
+  set_property -dict [list CONFIG.C_ASYNC_INTR {0xFFFFFFFF} CONFIG.C_IRQ_CONNECTION {1} \
+    CONFIG.C_IRQ_IS_LEVEL {1}] $axi_intc_0
   connect_bd_intf_net -intf_net axi_smc_M00_INTC [get_bd_intf_pins axi_smc/M00_AXI] [get_bd_intf_pins axi_intc_0/s_axi]
   connect_bd_net -net ps_wizard_0_pl0_ref_clk [get_bd_pins axi_intc_0/s_axi_aclk]
   connect_bd_net -net proc_sys_reset_0_interconnect_aresetn [get_bd_pins axi_intc_0/s_axi_aresetn]
   connect_bd_net -net axi_intc_0_irq [get_bd_pins axi_intc_0/irq] [get_bd_pins ps_wizard_0/pl_ps_irq0]
-  assign_bd_address -offset 0xA4000000 -range 0x00001000 -target_address_space [get_bd_addr_spaces ps_wizard_0/Data] [get_bd_addr_segs axi_intc_0/S_AXI/Reg] -force
+  assign_bd_address -offset 0xA4000000 -range 0x00001000 [get_bd_addr_segs axi_intc_0/S_AXI/Reg] -force
 
   # --- PFM properties
   set_property PFM_NAME "xilinx.com:huins:huins_vp1902_base:202520.1" [get_files [current_bd_design].bd]
@@ -1527,19 +1498,15 @@ MIO} \
     clk_out3 {id "2" is_default "false" proc_sys_reset "proc_sys_reset_4x" status "fixed"} \
     clk_out4 {id "3" is_default "false" proc_sys_reset "proc_sys_reset_5x" status "fixed"} \
     clk_out5 {id "4" is_default "false" proc_sys_reset "proc_sys_reset_6x" status "fixed"}} [get_bd_cells /clk_wizard_0]
-  set_property PFM.AXI_PORT {M01_AXI {memport "M_AXI_GP"} M02_AXI {memport "M_AXI_GP"} M03_AXI {memport "M_AXI_GP"} \
-    M04_AXI {memport "M_AXI_GP"} M05_AXI {memport "M_AXI_GP"} M06_AXI {memport "M_AXI_GP"} \
-    M07_AXI {memport "M_AXI_GP"} M08_AXI {memport "M_AXI_GP"} M09_AXI {memport "M_AXI_GP"} \
-    M10_AXI {memport "M_AXI_GP"} M11_AXI {memport "M_AXI_GP"} M12_AXI {memport "M_AXI_GP"} \
-    M13_AXI {memport "M_AXI_GP"} M14_AXI {memport "M_AXI_GP"} M15_AXI {memport "M_AXI_GP"}} [get_bd_cells /axi_smc]
-  set_property PFM.AXI_PORT {M00_AXI {memport "M_AXI_GP"} M01_AXI {memport "M_AXI_GP"} M02_AXI {memport "M_AXI_GP"} \
-    M03_AXI {memport "M_AXI_GP"} M04_AXI {memport "M_AXI_GP"} M05_AXI {memport "M_AXI_GP"} \
-    M06_AXI {memport "M_AXI_GP"} M07_AXI {memport "M_AXI_GP"}} [get_bd_cells /smartconnect_lpd]
   set parVal []
   for {set i 6} {$i < 10} {incr i} {
     lappend parVal S[format %02d $i]_AXI {memport "S_AXI_NOC" sptag "DDR"}
   }
   set_property PFM.AXI_PORT $parVal [get_bd_cells /axi_noc_0]
+  # Declaring non-materialized ports avoids unused AXI transactors in hw_emu.
+  set_property PFM.AXI_PORT {M01_AXI {} M02_AXI {} M03_AXI {} M04_AXI {} M05_AXI {} M06_AXI {} \
+    M07_AXI {} M08_AXI {} M09_AXI {} M10_AXI {} M11_AXI {} M12_AXI {} M13_AXI {} M14_AXI {} \
+    M15_AXI {}} [get_bd_cells /axi_smc]
   set_property PFM.IRQ {intr {id 0 range 32}} [get_bd_cells /axi_intc_0]
 
   # --- Platform properties
@@ -1563,4 +1530,3 @@ create_root_design ""
 
 
 common::send_gid_msg -ssname BD::TCL -id 2053 -severity "WARNING" "This Tcl script was generated from a block design that has not been validated. It is possible that design <$design_name> may result in errors during validation."
-

@@ -6,14 +6,15 @@
 
 include ../platform.mk
 
-TCL_SOURCE=xsa_scripts/xsa.tcl
+XSA_TCL = xsa_scripts/xsa.tcl
+TCL_SOURCES = $(XSA_TCL) xsa_scripts/project.tcl xsa_scripts/bd.tcl xsa_scripts/huins_vp1902_ddr.xdc xsa_scripts/huins_vp1902_io.xdc
 
 .PHONY: all xsa
 
 all xsa : $(XSA)
 
-$(XSA): $(TCL_SOURCE)
-	$(VIVADO) -mode batch -notrace -source $(TCL_SOURCE) -tclargs $(PLATFORM_NAME) $(VER) $(PRE_SYNTH)
+$(XSA): $(TCL_SOURCES)
+	$(VIVADO) -mode batch -notrace -source $(XSA_TCL) -tclargs $(PLATFORM_NAME) $(VER) $(PRE_SYNTH)
 
 clean:
 	$(RM) -r vivado* build .Xil *dynamic* *.log *.xpe 

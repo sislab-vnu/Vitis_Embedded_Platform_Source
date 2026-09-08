@@ -1,0 +1,50 @@
+From b7146855774e0b9653f027b80cfcd865db626748 Mon Sep 17 00:00:00 2001
+From: Venkatesh Yadav Abbarapu <venkatesh.abbarapu@amd.com>
+Date: Thu, 26 Jun 2025 11:54:40 +0530
+Subject: [PATCH] mmc: zynq_sdhci: Reset the host controller
+
+Reset the host controller at the early stage of probe so that the
+configuration will be done properly for reboot cases.
+
+Signed-off-by: Venkatesh Yadav Abbarapu <venkatesh.abbarapu@amd.com>
+Link: https://lore.kernel.org/r/20250626062440.295301-1-venkatesh.abbarapu@amd.com
+Signed-off-by: Michal Simek <michal.simek@amd.com>
+---
+ drivers/mmc/zynq_sdhci.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/drivers/mmc/zynq_sdhci.c b/drivers/mmc/zynq_sdhci.c
+index 2375b15539b..3b682918b03 100644
+--- a/drivers/mmc/zynq_sdhci.c
++++ b/drivers/mmc/zynq_sdhci.c
+@@ -1127,6 +1127,28 @@ static int arasan_sdhci_probe(struct udevice *dev)
+ 	if (arasan_sdhci_is_compatible(dev, SDHCI_COMPATIBLE_VERSAL_NET_EMMC))
+ 		priv->internal_phy_reg = true;
+ 
++	ret = reset_get_bulk(dev, &priv->resets);
++	if (ret == -ENOTSUPP || ret == -ENOENT) {
++		dev_warn(dev, "Reset not found\n");
++	} else if (ret) {
++		dev_err(dev, "Reset failed\n");
++		return ret;
++	}
++
++	if (!ret) {
++		ret = reset_assert_bulk(&priv->resets);
++		if (ret) {
++			dev_err(dev, "Reset assert failed\n");
++			return ret;
++		}
++
++		ret = reset_deassert_bulk(&priv->resets);
++		if (ret) {
++			dev_err(dev, "Reset release failed\n");
++			return ret;
++		}
++	}
++
+ 	ret = clk_get_by_index(dev, 0, &clk);
+ 	if (ret < 0) {
+ 		dev_err(dev, "failed to get clock\n");
+-- 
+2.43.0
