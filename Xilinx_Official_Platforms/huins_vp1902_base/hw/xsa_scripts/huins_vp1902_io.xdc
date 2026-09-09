@@ -9,9 +9,8 @@ set_property -dict {PACKAGE_PIN BM18 IOSTANDARD LVCMOS18} [get_ports I2C0_sda_io
 set_property -dict {PACKAGE_PIN BL16 IOSTANDARD LVCMOS18} [get_ports I2C1_scl_io]
 set_property -dict {PACKAGE_PIN BM16 IOSTANDARD LVCMOS18} [get_ports I2C1_sda_io]
 
-# The onboard CP210 is wired to the vendor design's UART1 pair. Route UART0
-# there because the Vitis common-image firmware uses UART0 as its console.
-set_property -dict {PACKAGE_PIN BK13 IOSTANDARD LVCMOS18} [get_ports UART0_rxd]
-set_property -dict {PACKAGE_PIN BL14 IOSTANDARD LVCMOS18} [get_ports UART0_txd]
-set_property -dict {PACKAGE_PIN BK17 IOSTANDARD LVCMOS18} [get_ports UART1_rxd]
-set_property -dict {PACKAGE_PIN BL18 IOSTANDARD LVCMOS18} [get_ports UART1_txd]
+# Keep the board's native UART numbering: CP210 is UART1 on BK13/BL14.
+set_property -dict {PACKAGE_PIN BK17 IOSTANDARD LVCMOS18} [get_ports UART0_rxd]
+set_property -dict {PACKAGE_PIN BL18 IOSTANDARD LVCMOS18} [get_ports UART0_txd]
+set_property -dict {PACKAGE_PIN BK13 IOSTANDARD LVCMOS18} [get_ports UART1_rxd]
+set_property -dict {PACKAGE_PIN BL14 IOSTANDARD LVCMOS18} [get_ports UART1_txd]

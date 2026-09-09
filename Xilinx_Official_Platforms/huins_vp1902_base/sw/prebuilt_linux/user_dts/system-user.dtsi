@@ -9,7 +9,7 @@
  */
 / {
 	chosen {
-		bootargs = "console=ttyAMA0 earlycon=pl011,mmio32,0xFF000000,115200n8 clk_ignore_unused root=PARTUUID=6812d01f-f2ab-48a6-b218-8f56f2f72dad rw rootwait cma=512M";
+		bootargs = "console=ttyAMA0 earlycon=pl011,mmio32,0xFF010000,115200n8 clk_ignore_unused root=PARTUUID=6812d01f-f2ab-48a6-b218-8f56f2f72dad rw rootwait cma=512M";
 		stdout-path = "serial0:115200n8";
 	};
 };
@@ -22,4 +22,8 @@
 	max-frequency = <25000000>;
 	clk-phase-sd-hs = <0>, <0>;
 	resets = <&versal_reset 0x0c104030>; /* VERSAL_RST_SDIO_1 */
+};
+
+&amba_pl {
+	/delete-property/ firmware-name;
 };

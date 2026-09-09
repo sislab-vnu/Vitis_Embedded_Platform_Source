@@ -5,7 +5,7 @@
 /* U-Boot control DTB embedded in BOOT.BIN. */
 / {
 	chosen {
-		stdout-path = "serial0:115200n8";
+		stdout-path = "serial1:115200n8";
 	};
 };
 

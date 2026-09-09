@@ -136,12 +136,13 @@ The UART route depends on the programmed hardware:
 
 | Hardware image | CP210 route |
 |---|---|
-| Linked Vitis platform | PS UART0, normally Linux `ttyAMA0` |
+| Linked Vitis platform | PS UART1 for U-Boot, Linux earlycon, and the `ttyAMA1` getty |
 | Reference recovery `BOOT.BIN` | PS UART1 |
 
-The rescue kernel initially logs through `ttyAMA0`, then the rescue initramfs
-attaches its interactive shell to `ttyAMA1`. Both are observed on the same
-physical CP210 connection because the reference PDI controls the EMIO route.
+The platform preserves the board's native UART1 route to the physical CP210
+connection. Linux keeps `ttyAMA0` as the full kernel console because
+`console=ttyAMA1` stopped normal boot during serial-driver handoff. UART1 remains
+available for earlycon and for the initramfs or systemd getty shell.
 
 A PL-empty pre-synthesis XSA does not provide a usable EMIO serial route. UART
 silence alone is therefore not proof that PLM or Linux failed.
@@ -324,11 +325,13 @@ The loader at `hw/xsa_scripts/jtag_edf_rescue.tcl` performs these actions:
 1. Connects to `hw_server`.
 2. Resets the VP1902.
 3. Programs a reference recovery `BOOT.BIN`.
-4. Stops A72 core 0.
+4. Retries for up to 30 seconds while A72 core 0 leaves FPD isolation, then
+   stops it.
 5. Loads `Image` at `0x20000000`.
 6. Loads the initramfs at `0x30000000`.
 7. Loads the Linux DT at `0x1000`.
-8. Resumes U-Boot and prints the two commands needed to start Linux.
+8. Prints the two commands needed to start Linux, waits two seconds for the
+   operator to hold Ctrl-C, and resumes U-Boot.
 
 Prepare the inputs:
 
@@ -348,7 +351,9 @@ gzip -t "$RESCUE_INITRAMFS"
 See [USAGE.md](USAGE.md#1-build-a-small-uart-rescue-initramfs) for the validated
 BusyBox initramfs construction commands.
 
-Run the loader:
+Open the CP210 terminal first and hold Ctrl-C, then run the loader in another
+terminal. This interrupts U-Boot as soon as A72-0 resumes and avoids racing its
+automatic boot command:
 
 ```bash
 xsct hw/xsa_scripts/jtag_edf_rescue.tcl \
@@ -360,7 +365,7 @@ At the `Versal>` prompt, enter the commands printed by the loader. They have
 this form:
 
 ```text
-setenv bootargs console=ttyAMA0 earlycon=pl011,mmio32,0xFF000000,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused rdinit=/init cma=512M
+setenv bootargs console=ttyAMA0,115200 earlycon=pl011,mmio32,0xFF010000,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused rdinit=/init cma=512M
 booti 0x20000000 0x30000000:0x<calculated-initramfs-size> 0x1000
 ```
 
@@ -545,10 +550,10 @@ The final matched package has these recorded SHA-256 values:
 
 | Artifact | SHA-256 |
 |---|---|
-| Linked `BOOT.BIN` | `f7d64878127489ec8349003d67a92fa386651a8d0a795f853bf29181edeb6a03` |
-| Linux `system.dtb` | `a89270c1382ecbb98096a855972ea2cfb73e2c79466b7ef503147f84f0690b20` |
+| Linked `BOOT.BIN` | `46b66ec59cff67a1f7afbe843ed9fa5b4a4c45c6145c6dd0bd8efaa081531abb` |
+| Linux `system.dtb` | `82c0b40ee47e82adbaf9f26e4d903c594a2a21d7d6bdaf17e2d073c0abe9f461` |
 | Common-image `Image` | `79359c3f0af65cef3dbabab725b156a4b7b1925f781ab42f2f997be70f6dc86c` |
-| Packaged `vadd.xclbin` | `110a684d361a5c6ddd5bed2f1815b30c851d140265000de2cea95513f125592d` |
+| Packaged `vadd.xclbin` | `1ee7e2d0167195d7b7214209bf604082faaea6cab42f01635a1ac18841435dbc` |
 | `simple_vadd` host | `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` |
 
 Hash the actual files before deployment. A matching filename is not sufficient

@@ -1,0 +1,20 @@
+[Unit]
+Description=Serial login on Huins CP210 UART1
+After=systemd-user-sessions.service
+ConditionPathExists=/dev/ttyAMA1
+
+[Service]
+ExecStart=-/sbin/agetty -L 115200 ttyAMA1 vt100
+Type=idle
+Restart=always
+RestartSec=0
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/ttyAMA1
+TTYReset=yes
+TTYVHangup=yes
+IgnoreSIGPIPE=no
+SendSIGHUP=yes
+
+[Install]
+WantedBy=getty.target

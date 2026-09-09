@@ -35,11 +35,18 @@ source <Vitis_install>/Vitis/2025.2/settings64.sh
 cd Xilinx_Official_Platforms/huins_vp1902_base
 export PLATFORM_ROOT="$PWD"
 export COMMON_SW=/path/to/xilinx-versal-common-v2025.2
+export PLATFORM_ROOTFS="$PLATFORM_ROOT/sw/build/platform/rootfs/rootfs.ext4"
 
 test -f "$COMMON_SW/Image"
 test -f "$COMMON_SW/rootfs.ext4"
 test -f "$COMMON_SW/sdk.sh"
 ```
+
+`make linux` creates `PLATFORM_ROOTFS` from the common-image root filesystem,
+installs the platform's `10-end0.network`, and enables the custom UART1 getty.
+GEM requests DHCP with route metric 100 while retaining `192.168.1.57/24` and
+gateway `192.168.1.1` at metric 2048 as the deterministic fallback. The input
+common image remains unchanged.
 
 The internal Vitis 2025.2 platform suffix is `202520_1`, not `202520_2`.
 
@@ -56,13 +63,15 @@ The internal Vitis 2025.2 platform suffix is `202520_1`, not `202520_2`.
 | Kernel clocks | 100, 200, 300, 400, and 600 MHz; 100 MHz is the default |
 | Board I/O | SD1, dual-parallel QSPI, USB 2.0 ULPI, GEM1 RGMII, EMIO MDIO, UART0/1, and I2C0/1 |
 | Linux artifacts | Generated system DTB plus Versal common-image kernel, root filesystem, TF-A, and U-Boot |
+| Default access | UART1 U-Boot, earlycon, and getty at 115200; GEM DHCP with `192.168.1.57/24` static fallback |
 | AI Engine | Not available on Versal Premium Gen1 |
 | PL DDR SODIMM | Not exposed by this base platform |
 | Hardware emulation | Not supported for this part in Vitis 2025.2 because the `ps_wizard` TLM model is unavailable |
 
-UART0 is deliberately routed to the board's CP210 pair at `BK13`/`BL14` and is
-the Linux console at 115200 baud. UART1 remains on `BK17`/`BL18`. Both UARTs,
-I2C, and GEM1 MDIO use LVCMOS18 in HDIO bank 408.
+UART1 uses the board's native CP210 pair at `BK13`/`BL14` for U-Boot, Linux
+earlycon, and the userspace getty at 115200 baud. The stable Linux kernel
+console is `ttyAMA0` on `BK17`/`BL18`. Both UARTs, I2C, and GEM1 MDIO use
+LVCMOS18 in HDIO bank 408.
 
 Because the console uses EMIO, a pre-synthesis base platform has no usable
 serial path by itself. The path becomes active when `v++ -l` creates the linked
@@ -269,7 +278,7 @@ mkdir -p package.hw
 v++ -p -t hw --platform "$XPFM" \
   --package.boot_mode sd \
   --package.out_dir package.hw \
-  --package.rootfs "$COMMON_SW/rootfs.ext4" \
+  --package.rootfs "$PLATFORM_ROOTFS" \
   --package.kernel_image "$KERNEL_IMAGE" \
   --package.sd_file simple_vadd \
   -o package.hw/vadd.xclbin vadd.link.xsa
@@ -307,7 +316,7 @@ implements a 4096-element native-XRT test. A repeat with the freshly packaged
 host and xclbin recorded `Mismatches: 0/4096`, `TEST PASSED`, and exit status
 zero. Their SHA-256 hashes were
 `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` and
-`110a684d361a5c6ddd5bed2f1815b30c851d140265000de2cea95513f125592d`.
+`1ee7e2d0167195d7b7214209bf604082faaea6cab42f01635a1ac18841435dbc`.
 
 Do not copy XRT libraries or kernel modules from the Vitis 2025.2 common image
 onto EDF. The original 2025.2 SDK host ran against EDF's system XRT 2.23, and
@@ -361,7 +370,7 @@ v++ -p -t hw --platform "$XPFM" \
   --package.boot_mode sd \
   --package.no_image \
   --package.out_dir package.edf \
-  --package.rootfs "$COMMON_SW/rootfs.ext4" \
+  --package.rootfs "$PLATFORM_ROOTFS" \
   --package.kernel_image "$COMMON_SW/Image" \
   --package.sd_file simple_vadd \
   -o package.edf/vadd.xclbin vadd.link.xsa
@@ -456,14 +465,15 @@ sort-key 15-edf-vp1902-vadd
 title EDF Linux - Huins VP1902 Vitis vadd
 efi /Image
 devicetree /vp1902-vadd-system.dtb
-options root=PARTUUID=$ROOT_PARTUUID ro rootwait earlycon console=ttyAMA0,115200 uio_pdrv_genirq.of_id=generic-uio cma=512M
+options root=PARTUUID=$ROOT_PARTUUID ro rootwait earlycon=pl011,mmio32,0xFF010000,115200n8 console=ttyAMA0,115200 uio_pdrv_genirq.of_id=generic-uio cma=512M
 EOF
 ```
 
-The recorded unattended validation used the same line without
-`console=ttyAMA0,115200` and wrote its result through a systemd service. The
-explicit console argument above is intentional for an interactive run; UART0
-on `ttyAMA0` was validated separately on the CP210 path.
+The explicit earlycon argument selects the board's native UART1 CP210 path.
+Linux keeps `ttyAMA0` as its full kernel console because `console=ttyAMA1`
+stopped normal boot during serial-driver handoff. The custom getty installed
+below provides the login prompt on UART1. The previous UART0 pin remap produced
+a silent console in the final linked PDI.
 
 The new entry can be selected manually in the boot menu. To reproduce the
 unattended boot selection, make it the persistent test default while retaining
@@ -496,6 +506,17 @@ sudo install -m 0755 simple_vadd \
   "$ROOT_MNT/home/amd-edf/vp1902-vadd/simple_vadd"
 sudo install -m 0644 package.edf/vadd.xclbin \
   "$ROOT_MNT/home/amd-edf/vp1902-vadd/vadd.xclbin"
+sudo install -D -m 0644 \
+  "$PLATFORM_ROOT/sw/prebuilt_linux/rootfs_overlay/etc/systemd/network/10-end0.network" \
+  "$ROOT_MNT/etc/systemd/network/10-end0.network"
+sudo install -D -m 0644 \
+  "$PLATFORM_ROOT/sw/prebuilt_linux/rootfs_overlay/etc/systemd/system/huins-uart-getty.service" \
+  "$ROOT_MNT/etc/systemd/system/huins-uart-getty.service"
+sudo mkdir -p "$ROOT_MNT/etc/systemd/system/getty.target.wants"
+sudo rm -f \
+  "$ROOT_MNT/etc/systemd/system/getty.target.wants/serial-getty@ttyAMA1.service"
+sudo ln -sfn /etc/systemd/system/huins-uart-getty.service \
+  "$ROOT_MNT/etc/systemd/system/getty.target.wants/huins-uart-getty.service"
 sudo chown -R --reference="$ROOT_MNT/home/amd-edf" \
   "$ROOT_MNT/home/amd-edf/vp1902-vadd"
 
@@ -526,8 +547,8 @@ mountpoint -q "$ESP_MNT" && sudo umount "$ESP_MNT"
 
 This does not change EDF's kernel, root filesystem packages, XRT libraries, or
 `zocl` module. It replaces the first-stage `boot.bin`, adds one DTB and one
-boot-menu entry, optionally selects that entry in `loader.conf`, and installs
-the two application files.
+boot-menu entry, optionally selects that entry in `loader.conf`, installs the
+two application files, configures networking, and enables the UART1 getty.
 
 ### 3. Boot and run `vadd`
 
@@ -539,8 +560,10 @@ picocom -b 115200 /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_
 ```
 
 Select `EDF Linux - Huins VP1902 Vitis vadd` in the EDF boot menu, or wait for
-the persistent five-second test default. The linked PDI activates the EMIO UART0
-route to the CP210 pair, and the boot entry selects that UART as `ttyAMA0`.
+the persistent five-second test default. The linked PDI activates the EMIO UART1
+route to the CP210 pair. UART1 carries U-Boot and Linux earlycon output; after
+Linux initializes its serial drivers, `huins-uart-getty.service` supplies the
+`ttyAMA1` login prompt. A gap in kernel messages during that handoff is expected.
 
 After logging in as the EDF user, verify that the custom DTB and EDF XRT stack
 are active:
@@ -576,6 +599,8 @@ Both the original validated pair and the freshly packaged pair loaded the
 xclbin successfully, allocated buffers through CMA, registered the compute-unit
 interrupt, and recorded `TEST PASSED` with exit status zero. The latter pass
 confirms the current source and packaging output on the board.
+The automated rerun used EDF's root-owned TCF agent to launch the deployed
+`/storage/simple_vadd /storage/vadd.xclbin` pair and captured the same result.
 The host's `device.load_xclbin()` call loads the accelerator; do not run
 `fpgautil` separately.
 The EDF kernel may print `IRQ index 32 not found` while `zocl` initially probes;
@@ -612,7 +637,9 @@ sync
 sudo umount "$ESP_MNT"
 ```
 
-The original EDF boot-menu entries and root filesystem are otherwise unchanged.
+This restores the ESP boot files only. The application, network configuration,
+and UART getty installed in the EDF root filesystem remain until removed or
+restored separately.
 
 ## Recover an EDF Boot through JTAG
 
@@ -644,9 +671,10 @@ or replace its `/efi/BOOT.BIN`.
 
 The Versal common-image archive contains a static AArch64 BusyBox. The following
 creates an initramfs that configures GEM with the validated static address and
-opens a root shell on UART1. UART1 is intentional here: the reference
-`BOOT.BIN` routes UART1 to the onboard CP210, whereas this Vitis platform's
-linked PDI routes UART0 to that connector.
+opens a root shell on UART1. The kernel uses UART1 for earlycon and keeps
+`ttyAMA0` as its full console; the init script opens `ttyAMA1` directly after
+the serial driver is available. Both the reference image and newly linked
+platform images use the board's native UART1 route to the onboard CP210.
 
 ```bash
 set -e
@@ -691,8 +719,15 @@ gzip -t "$RESCUE_INITRAMFS"
 
 ### 2. Load the rescue environment over JTAG
 
-Start `hw_server` locally or tunnel its port from the lab host. Set the URL and
-recovery inputs, then run the checked-in XSCT loader:
+Start `hw_server` locally or tunnel its port from the lab host. Before running
+the loader, open the CP210 UART in another terminal and hold Ctrl-C so U-Boot
+stops immediately when the loader resumes A72-0:
+
+```bash
+picocom -b 115200 /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_*-if00-port0
+```
+
+Set the URL and recovery inputs, then run the checked-in XSCT loader:
 
 ```bash
 set -e
@@ -719,25 +754,18 @@ restore power with the EDF card inserted, wait for U-Boot, and rerun the XSCT
 command once. A reset without removing power did not clear the original stalled
 PMC state.
 
-Open the CP210 UART at 115200 baud. Repeatedly press Ctrl-C if U-Boot is already
-inside its BOOTP retry loop:
-
-```bash
-picocom -b 115200 /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_*-if00-port0
-```
-
 At the `Versal>` prompt, enter the two commands printed by
 `jtag_edf_rescue.tcl`. The second command includes the calculated initramfs size;
 for example:
 
 ```text
-setenv bootargs console=ttyAMA0 earlycon=pl011,mmio32,0xFF000000,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused rdinit=/init cma=512M
+setenv bootargs console=ttyAMA0,115200 earlycon=pl011,mmio32,0xFF010000,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused rdinit=/init cma=512M
 booti 0x20000000 0x30000000:0x<initramfs-size> 0x1000
 ```
 
-The rescue shell appears as `~ #` on the same CP210 connection even though its
-Linux shell is attached to `ttyAMA1`; the `console=ttyAMA0` argument only selects
-the early kernel log console.
+Early kernel output and the `~ #` rescue shell use UART1 on the CP210 connection.
+Normal kernel-console output switches to UART0 during serial-driver handoff, so
+a quiet interval before the UART1 shell appears is expected.
 
 ### 3. Reinsert and inspect the EDF card
 
@@ -915,8 +943,8 @@ never copy selected XRT libraries or kernel modules between images.
   kernel with a 3.3 V, 25 MHz Linux SD configuration. Five consecutive
   full-power handoffs enumerated all three card partitions without an MMC error.
 - An existing EDF installation may select a different UART in its own device
-  tree. This repository's generated DTB consistently selects UART0 on the CP210
-  pair.
+  tree. This repository's generated DTB uses native UART1 on the CP210 pair for
+  earlycon while retaining `ttyAMA0` as the full kernel console.
 
 See [README.md](README.md) for board wiring, implementation results, and the
 hardware-emulation diagnosis.

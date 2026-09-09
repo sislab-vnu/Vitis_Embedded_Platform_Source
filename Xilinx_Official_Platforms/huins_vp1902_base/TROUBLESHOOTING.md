@@ -184,20 +184,24 @@ The pre-synthesis platform produced no usable CP210 serial console.
 
 **Cause**
 
-Both PS UARTs use EMIO and require routed PL logic. The CP210 pair is also tied
-to a specific UART route, while rescue firmware may select the other UART.
+Both PS UARTs use EMIO and require routed PL logic. The CP210 is physically tied
+to the board's UART1 pair at `BK13`/`BL14`. Remapping UART0 to those package pins
+left the final linked PDI silent even though Linux and GEM were running.
 
 **Solution**
 
-Route platform UART0 to `BK13`/`BL14` for normal `ttyAMA0` operation and leave
-UART1 on `BK17`/`BL18`. Use a linked application PDI, or an implemented base
-PDI, when the EMIO console is required. Use UART1 deliberately with the vendor
-reference PDI during rescue.
+Preserve native UART1 on `BK13`/`BL14` and leave UART0 on `BK17`/`BL18`. Select
+`serial1` in U-Boot and use UART1 earlycon in Linux, but keep `ttyAMA0` as the
+full kernel console. Selecting `console=ttyAMA1` consistently stopped normal
+Linux boot during serial-driver handoff. Enable `huins-uart-getty.service` to
+provide the login prompt on `ttyAMA1`. Use a linked application PDI, or an
+implemented base PDI, when the EMIO serial route is required.
 
 **Validation**
 
-UART0 worked with the linked platform; UART1 worked in the EDF JTAG recovery
-flow.
+The corrected linked PDI is physically validated on CP210 for U-Boot, Linux
+earlycon, and the `ttyAMA1` EDF login prompt. Both serial devices exist, and the
+split-console EDF boot completed with networking and TCF available.
 
 ### 9. A pre-synthesis XSA could omit boot-critical initialization
 
@@ -596,6 +600,11 @@ Use the root-owned TCF agent on port 1534 for controlled lab file transfer and
 process execution. Confirm the board IP from the lab host before use. This is a
 lab automation workaround, not a deployment requirement.
 
+**Validation**
+
+TCF `ProcessesV1` launched `/storage/simple_vadd /storage/vadd.xclbin`, captured
+`Mismatches: 0/4096` and `TEST PASSED`, and recorded exit status zero.
+
 ### 28. A stale or mismatched linked artifact caused an A72 SError
 
 **Symptom**
@@ -612,8 +621,8 @@ reachable in the active hardware.
 **Solution**
 
 Treat `BOOT.BIN`, the platform DT, and xclbin as one matched set. The final
-package uses the newer September 4 `sd-power-link` XSA and the final platform
-export. Do not use the superseded September 1 package.
+package uses the current UART1-linked XSA and split-console platform export. Do
+not use the superseded September 1 package.
 
 **Validation**
 
@@ -638,7 +647,8 @@ looked like a boot failure.
 
 UART visibility is not a reliable completion test during this JTAG sequence.
 PLM had loaded the linked PDI and A72 partitions, and Linux later became
-reachable through GEM/TCF.
+reachable through GEM/TCF. A later explicit console test also confirmed that the
+UART0 package-pin remap was silent; the source now uses native UART1 instead.
 
 **Solution**
 
@@ -647,6 +657,9 @@ Check all three sources before declaring failure:
 - `plm log` for `Boot PDI Load: Done`.
 - A72/FPD target state in XSDB.
 - Board network and TCF reachability.
+
+Rebuild linked hardware after the UART1 XDC change before expecting CP210 output
+from a linked image.
 
 Do not send a second APU-only image after the A72 is already running. That
 attempt failed with `XPmApuCore_WakeUp: Status = 7DB` because the core was
@@ -839,18 +852,18 @@ controller through Linux `devmem`.
 
 ## Final artifact evidence
 
-The final validated package was generated from the September 4
-`sd-power-link` linked XSA and the final split-DT platform export.
+The final validated package was generated from the current UART1-linked XSA and
+the split-console platform export.
 
 | Artifact | SHA-256 |
 |---|---|
-| `BOOT.BIN` | `f7d64878127489ec8349003d67a92fa386651a8d0a795f853bf29181edeb6a03` |
-| Linux `system.dtb` | `a89270c1382ecbb98096a855972ea2cfb73e2c79466b7ef503147f84f0690b20` |
+| `BOOT.BIN` | `46b66ec59cff67a1f7afbe843ed9fa5b4a4c45c6145c6dd0bd8efaa081531abb` |
+| Linux `system.dtb` | `82c0b40ee47e82adbaf9f26e4d903c594a2a21d7d6bdaf17e2d073c0abe9f461` |
 | Stock common-image `Image` | `79359c3f0af65cef3dbabab725b156a4b7b1925f781ab42f2f997be70f6dc86c` |
-| Packaged `vadd.xclbin` | `110a684d361a5c6ddd5bed2f1815b30c851d140265000de2cea95513f125592d` |
+| Packaged `vadd.xclbin` | `1ee7e2d0167195d7b7214209bf604082faaea6cab42f01635a1ac18841435dbc` |
 | `simple_vadd` host | `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` |
 
-Do not use the superseded package generated from the September 1 linked XSA.
+Do not mix files from earlier linked packages with this validated set.
 
 ## Remaining limitations
 

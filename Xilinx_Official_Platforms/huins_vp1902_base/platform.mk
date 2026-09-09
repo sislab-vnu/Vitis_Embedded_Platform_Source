@@ -38,6 +38,7 @@ IMAGE_DIR        = $(SW_DIR)/platform/image
 UBOOT_DTB_FILE   = $(BOOT_DIR)/u-boot.dtb
 LINUX_DTB_FILE   = $(IMAGE_DIR)/system.dtb
 DTB_FILE         = $(LINUX_DTB_FILE)
+ROOTFS_IMAGE     = $(SW_DIR)/platform/rootfs/rootfs.ext4
 BOOT_IMAGE       = $(BOOT_DIR)/BOOT.BIN
 SW_FILES         = $(IMAGE_DIR)/boot.scr $(BOOT_DIR)/u-boot.elf $(BOOT_DIR)/bl31.elf
 BOOT_FILES       = u-boot.elf bl31.elf

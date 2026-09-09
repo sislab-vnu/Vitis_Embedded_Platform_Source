@@ -50,7 +50,7 @@ Board facts extracted from `huins_mfp-vp1902_userguide.pdf` (Huins MFP-VP1902-S)
 | SD | microSD 3.0: `PMC_SD1_30AD_PERIPHERAL` MIO 26:36, `4Bit_autodir`, `SD_3.0_AUTODIR`, high_speed |
 | Ethernet | `PS_ENET1_PERIPHERAL` RGMII MIO 38:49; `PS_ENET1_MDIO` on EMIO (XIO BM13/BL13, LVCMOS18); GEM1 ref clk 125 MHz |
 | USB | `PS_USB3_PERIPHERAL` on PMC MIO 13:25 (USB-2.0 ULPI PHY, no GT) |
-| UART0/1, I2C0/1 | **EMIO**, LVCMOS18 (UART0 console on CP210 XIO BK13/BL14; UART1 XIO BK17/BL18; UART 115200; I2C0 XIO BM17/BM18, I2C1 BL16/BM16) |
+| UART0/1, I2C0/1 | **EMIO**, LVCMOS18 (UART1 console on CP210 XIO BK13/BL14; UART0 XIO BK17/BL18; UART 115200; I2C0 XIO BM17/BM18, I2C1 BL16/BM16) |
 | PL clocks (ps_wizard) | PL0 100 / PL1 300 / PL2 200 / PL3 125 MHz; NOC ref 1000 MHz |
 | DDR4 NoC | `axi_noc:1.1`, DDR4_SDRAM, `SODIMMs`, `DDR4-3200AA(22-22-22)`, RANK 2, NUM_MC 2 / NUM_MCP 2, NUM_SI 10, NUM_CLKS 12; DDR sys clocks are **external ports** `C0_DDR4_SYS`/`C1_DDR4_SYS` (board 200 MHz OSCs) |
 | Boot | JTAG/QSPI/SD selectable (SW1) |
@@ -62,10 +62,17 @@ loaded**; networking via GEM1 (MIO) is unaffected. Early-console visibility
 requires a linked or post-implementation design. HDIO bank 408 is supplied at
 1.8 V, so its GEM1 MDIO, UART, and I2C EMIO pins use `LVCMOS18`.
 The onboard CP210 is connected to the vendor design's UART1 XIO pair
-(`BK13` RX, `BL14` TX); this platform routes PS UART0 to that pair because the
-Vitis common-image PLM, TF-A, U-Boot, and generated device tree select UART0.
-Consequently, the reference `BOOT.BIN` uses UART1 on the CP210, while a linked
-platform PDI uses UART0 on the same connector.
+(`BK13` RX, `BL14` TX). The platform preserves that native route, selects PS
+UART1 for U-Boot and Linux earlycon, and starts a Linux getty on `ttyAMA1`. The
+stable kernel console remains `ttyAMA0`: selecting `ttyAMA1` as the full kernel
+console stopped normal Linux boot during serial-driver handoff. The previous
+attempt to remap UART0 to the CP210 pins produced a silent console in the final
+linked PDI.
+
+The prepared Linux root filesystem requests DHCP on GEM interface `end0`,
+retains `192.168.1.57/24` with a lower-priority fallback route, and enables the
+custom `huins-uart-getty.service` on `ttyAMA1`. Packaged images therefore have
+CP210 login and network access enabled by default.
 
 The manually rebuilt BD generates the hardware XSA and forces inclusion of the
 Versal pre-synthesis PDI. Remaining board-validation items:
