@@ -33,7 +33,7 @@ help::
 	@echo '      By default, PRE_SYNTH=TRUE.'
 	@echo ''
 	@echo '  make linux XSA=/home/user/$(PLATFORM_NAME)/vivado/build/$(PLATFORM_NAME).xsa'
-	@echo '  make platform'
+	@echo '  make platform XSA=/home/user/$(PLATFORM_NAME)/vivado/build/$(PLATFORM_NAME).xsa'
 	@echo '      Run these commands when XSA is already built in some other folder and no modifications are needed to it.'
 	@echo '      XSA should point to $(PLATFORM_NAME).xsa file.'
 	@echo ''
@@ -48,11 +48,22 @@ xsa: $(XSA)
 HW_TCL_SOURCES = $(TOP_DIR)/hw/xsa_scripts/xsa.tcl $(TOP_DIR)/hw/xsa_scripts/project.tcl $(TOP_DIR)/hw/xsa_scripts/bd.tcl $(TOP_DIR)/hw/xsa_scripts/huins_vp1902_ddr.xdc $(TOP_DIR)/hw/xsa_scripts/huins_vp1902_io.xdc
 
 ifeq ($(origin XSA),file)
-$(XSA): $(HW_TCL_SOURCES)
+PDI_MODE_FILE = $(XSA_DIR)/hw.pdi.mode
+RECORDED_PRE_SYNTH := $(strip $(shell test -f $(PDI_MODE_FILE) && cat $(PDI_MODE_FILE)))
+
+ifneq ($(RECORDED_PRE_SYNTH),$(PRE_SYNTH))
+.PHONY: force-build-mode
+$(XSA): force-build-mode
 endif
 
+$(XSA): $(HW_TCL_SOURCES)
 $(XSA):
 	$(MAKE) -C hw all
+else
+$(XSA):
+	@echo "ERROR: External XSA does not exist: $(XSA)"
+	@false
+endif
 
 linux: $(XSA)
 	$(MAKE) -C sw all XSA="$(XSA)" PREBUILT_LINUX_PATH="$(PREBUILT_LINUX_PATH)"
@@ -64,6 +75,11 @@ all platform: $(XSA) linux
 	vitis -s $(PLATFORM_SW_SRC)/generate_platform.py --platform_name $(PLATFORM_NAME) --xsa_path $(XSA) --boot_dir_path $(BOOT_DIR) --bif $(PLATFORM_BIF) --platform_out $(PLATFORM_DIR) --img_dir_path $(IMAGE_DIR) --dtb $(DTB_FILE)
 
 	@if [ -d $(SW_DIR)/platform/filesystem ]; then cp -rf ${SW_DIR}/platform/filesystem $(PLATFORM_DIR)/${PLATFORM_NAME}/export/${PLATFORM_NAME}/sw/${PLATFORM_NAME}/xrt/; fi
+	install -m 0644 $(TOP_DIR)/NETWORK_BRINGUP_GUIDE.md $(PLATFORM_EXPORT_DIR)/NETWORK_BRINGUP_GUIDE.md
+	install -m 0644 $(TOP_DIR)/TCF_TUNNEL_GUIDE.md $(PLATFORM_EXPORT_DIR)/TCF_TUNNEL_GUIDE.md
+	install -D -m 0644 $(TOP_DIR)/sw/prebuilt_linux/rootfs_overlay/etc/systemd/network/10-end0.network $(PLATFORM_EXPORT_DIR)/network/10-end0.network
+	install -D -m 0755 $(TOP_DIR)/scripts/setup_huins_network.sh $(PLATFORM_EXPORT_DIR)/scripts/setup_huins_network.sh
+	install -D -m 0644 $(TOP_DIR)/scripts/tcf_run_xclbin.tcl $(PLATFORM_EXPORT_DIR)/scripts/tcf_run_xclbin.tcl
 	@echo "INFO: Checking created platforms:" && find . -name "*.xpfm"
 	echo "Platform created:" && \
 	find . -name "*.xpfm"

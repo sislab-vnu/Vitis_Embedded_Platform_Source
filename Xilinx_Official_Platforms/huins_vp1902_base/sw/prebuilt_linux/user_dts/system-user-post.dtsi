@@ -1,0 +1,4 @@
+/* Applied after lopper domain pruning so the PMC GPIO provider is retained. */
+&gpio1 {
+	status = "okay";
+};

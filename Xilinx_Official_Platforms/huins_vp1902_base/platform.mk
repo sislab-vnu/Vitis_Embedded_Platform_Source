@@ -48,6 +48,7 @@ PLATFORM_NAME    = $(PLATFORM)_$(VERSION)
 PLATFORM_SW_SRC  = $(TOP_DIR)/platform
 PLATFORM_BIF     = $(PLATFORM_SW_SRC)/linux.bif
 PLATFORM_DIR      = $(TOP_DIR)/platform_repo
+PLATFORM_EXPORT_DIR = $(PLATFORM_DIR)/$(PLATFORM_NAME)/export/$(PLATFORM_NAME)
 
 #flow related
 ifneq ($(wildcard $(TOP_DIR)/xilinx-versal-common-v2025.2),)

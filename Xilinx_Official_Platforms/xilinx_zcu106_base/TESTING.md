@@ -20,7 +20,7 @@
 | Hardware accelerator: Vitis `vadd` via XRT/zocl | **PASS — 4096/4096 values, repeated** |
 | QEMU smoke test (kernel + our DTB) | PASS (with QEMU-specific memory adaptation) |
 | QEMU FSBL/U-Boot boot-chain emulation | Not reachable with manual QEMU (needs Vitis launch machinery) |
-| `pyxrt` Python binding | Built + import-verified; pending on-board install |
+| `pyxrt` Python binding | **PASS — device open + hardware `vadd`, 4096/4096 values** |
 
 ---
 
@@ -250,6 +250,9 @@ Net: QEMU validates kernel+DTB; the FSBL/DDR question can only be answered on ha
 
 ## 6. XRT Python bindings (`pyxrt`)
 
+The reproducible build, running-image installation, and `rootfs.ext4`
+integration procedure is in [README.md](README.md#enable-pyxrt-with-xrt-220).
+
 The 2025.2 ZynqMP common image already ships XRT 202520.2.20.0 + `zocl`
 (built for machine `xlnx_zynqmp_zcu106_reva`, kernel `6.12.40-xilinx-g31626ef92ff1`) and OpenCL —
 **no image rebuild needed**. The only missing piece was `pyxrt`, which was built out-of-tree:
@@ -268,10 +271,43 @@ $CXX -std=c++17 -shared -fPIC -fvisibility=hidden -O2 \
   -L$SDKTARGETSYSROOT/usr/lib -lxrt_coreutil -luuid -lpthread
 ```
 
-- Verified: `import pyxrt` succeeds under `qemu-aarch64 -L <sysroot>` with target Python 3.12
+- Verified first under `qemu-aarch64 -L <sysroot>` with target Python 3.12
 - Artifact: `/tmp/opencode/XRT/src/python/pybind11/src/pyxrt.cpython-312-aarch64-linux-gnu.so`
 - On-board install: copy to `/usr/lib/python3.12/site-packages/`
-- Caveats: cpython-312 ABI (EDF rootfs Python version must be 3.12 — unverified while board is down); `zocl` must be loaded for real device access
+- Board Python ABI: Python 3.12.12 (`cpython-312`), NumPy 1.26.4
+
+The binding was then tested on the physical board with the matching XRT 2.20
+userspace libraries and zocl 2.20. It enumerated one device, opened device 0,
+loaded the validated `vadd.xclbin`, allocated and synchronized three BOs, ran
+the kernel, and checked every result:
+
+```bash
+cd /tmp
+XILINX_XRT=/tmp/xrt-2.20 \
+LD_LIBRARY_PATH=/tmp/xrt-2.20 \
+python3 pyxrt_vadd.py /storage/zcu106-vadd/vadd.xclbin
+```
+
+```text
+kernel completion state: ert_cmd_state.ERT_CMD_STATE_COMPLETED
+mismatches: 0/4096
+PYXRT VADD TEST PASSED
+```
+
+The EDF rootfs defaults to XRT 2.23/2026.1. Loading this XRT 2.20-built Python
+extension against EDF's `libxrt_coreutil.so.2.23.0` correctly fails because
+the C++ ABI does not match:
+
+```text
+ImportError: pyxrt.cpython-312-aarch64-linux-gnu.so: undefined symbol:
+_ZNK3xrt6module12get_cfg_uuidEv
+```
+
+This is not a platform or zocl failure. `pyxrt` and `libxrt_coreutil` must come
+from the same XRT build. The target 2025.2 common image supplies the matching
+XRT 2.20 library, so no library override is needed when the module is installed
+there. The `XILINX_XRT`/`LD_LIBRARY_PATH` override above is specific to testing
+inside the newer EDF userspace.
 
 ---
 
@@ -280,7 +316,7 @@ $CXX -std=c++17 -shared -fPIC -fvisibility=hidden -O2 \
 1. Capture serial console during a full boot-stack retry to distinguish an FSBL dynamic-DDR failure from a U-Boot failure
 2. If dynamic DDR is the culprit: prepare a static-8GB DDR variant (`PSU_DYNAMIC_DDR_CONFIG_EN=0` + static training parameters) and retry the swap
 3. Boot the Vitis kernel with its matching 2025.2 common-image rootfs
-4. Install `pyxrt` on the board; verify `python3 -c "import pyxrt; pyxrt.device(0)"` with `zocl` loaded
+4. Package the validated `pyxrt` module into the matching 2025.2 common-image rootfs for persistent use
 5. Automate the kexec-only `PL0_REF` enable and generated `LPD_SLCR.AFI_FS` mask write if this mixed EDF/common-image test becomes a maintained workflow
 
 ## 8. Artifact map (host)
@@ -294,5 +330,6 @@ $CXX -std=c++17 -shared -fPIC -fvisibility=hidden -O2 \
 | `/tmp/opencode/zcu106_vadd/` | `vadd.xclbin`, host diagnostics, clock helper, overlays, and build reports |
 | `/storage/zcu106-vadd/` | persistent on-board copy of the accelerator test artifacts |
 | `/tmp/opencode/XRT/` + `pyxrt…so` | XRT source + built Python module |
+| `examples/pyxrt_vadd.py` | Full 4096-element on-board Python/XRT validation script |
 | `/home/admin/sysroot-zcu106/` | Yocto SDK sysroot (for cross-builds) |
 | `/home/tools/xilinx/prebuilt/xilinx-zynqmp-common-v2025.2/` | common image (Image, rootfs, boot files, sdk.sh) |

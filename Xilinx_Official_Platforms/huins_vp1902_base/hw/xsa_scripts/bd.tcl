@@ -275,6 +275,11 @@ proc create_root_design { parentCell } {
    CONFIG.FREQ_HZ {200000000} \
    ] $C1_DDR4_SYS
 
+  set CLK0_100M [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 CLK0_100M ]
+  set_property -dict [ list \
+   CONFIG.FREQ_HZ {100000000} \
+   ] $CLK0_100M
+
 
   set C0_DDR4 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:ddr4_rtl:1.0 C0_DDR4 ]
 
@@ -616,7 +621,7 @@ proc create_root_design { parentCell } {
     CONFIG.PS_PMC_CONFIG(PMC_EXTERNAL_TAMPER) {ENABLE 0 IO PMC_MIO_12} \
     CONFIG.PS_PMC_CONFIG(PMC_GLITCH_CONFIG) {TYPE EFUSE VCC_PMC_VALUE 0.80 DEPTH_SENSITIVITY 1 MIN_PULSE_WIDTH 0.5} \
     CONFIG.PS_PMC_CONFIG(PMC_GPIO0_MIO_PERIPHERAL) {ENABLE 0 IO PMC_MIO_0:25} \
-    CONFIG.PS_PMC_CONFIG(PMC_GPIO1_MIO_PERIPHERAL) {ENABLE 0 IO PMC_MIO_26:51} \
+    CONFIG.PS_PMC_CONFIG(PMC_GPIO1_MIO_PERIPHERAL) {ENABLE 1 IO PMC_MIO_26:51} \
     CONFIG.PS_PMC_CONFIG(PMC_GPIO_EMIO_PERIPHERAL_ENABLE) {0} \
     CONFIG.PS_PMC_CONFIG(PMC_GPIO_EMIO_WIDTH_HDL) {64} \
     CONFIG.PS_PMC_CONFIG(PMC_GPI_ENABLE) {0} \
@@ -657,7 +662,7 @@ proc create_root_design { parentCell } {
     CONFIG.PS_PMC_CONFIG(PMC_MIO33) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 0 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION inout} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO34) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 0 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION inout} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO35) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 0 AUX_IO 0 USAGE Unassigned OUTPUT_DATA default DIRECTION in} \
-    CONFIG.PS_PMC_CONFIG(PMC_MIO36) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 0 AUX_IO 0 USAGE Unassigned OUTPUT_DATA default DIRECTION in} \
+    CONFIG.PS_PMC_CONFIG(PMC_MIO36) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 0 AUX_IO 0 USAGE GPIO OUTPUT_DATA high DIRECTION out} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO37) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 0 AUX_IO 0 USAGE Unassigned OUTPUT_DATA default DIRECTION in} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO38) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 1 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION out} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO39) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 1 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION out} \
@@ -679,9 +684,9 @@ proc create_root_design { parentCell } {
     CONFIG.PS_PMC_CONFIG(PMC_MIO7) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 1 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION out} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO8) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 1 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION inout} \
     CONFIG.PS_PMC_CONFIG(PMC_MIO9) {DRIVE_STRENGTH 8mA SLEW slow PULL pullup SCHMITT 1 AUX_IO 0 USAGE Reserved OUTPUT_DATA default DIRECTION inout} \
-    CONFIG.PS_PMC_CONFIG(PMC_MIO_TREE_PERIPHERALS) {QSPI#QSPI#QSPI#QSPI#QSPI#QSPI#Loopback_Clk#QSPI#QSPI#QSPI#QSPI#QSPI#QSPI#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#SD1(3.0AD)##SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)####Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#SD1(3.0AD)#SD1(3.0AD)##########################}\
+    CONFIG.PS_PMC_CONFIG(PMC_MIO_TREE_PERIPHERALS) {QSPI#QSPI#QSPI#QSPI#QSPI#QSPI#Loopback_Clk#QSPI#QSPI#QSPI#QSPI#QSPI#QSPI#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#USB_2.0#SD1(3.0AD)##SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)#SD1(3.0AD)##GPIO 1##Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#Gem1#SD1(3.0AD)#SD1(3.0AD)##########################}\
 \
-    CONFIG.PS_PMC_CONFIG(PMC_MIO_TREE_SIGNALS) {qspi0_clk#qspi0_io[1]#qspi0_io[2]#qspi0_io[3]#qspi0_io[0]#qspi0_cs_b#qspi_lpbk#qspi1_cs_b#qspi1_io[0]#qspi1_io[1]#qspi1_io[2]#qspi1_io[3]#qspi1_clk#usb2phy_reset#ulpi_tx_data[0]#ulpi_tx_data[1]#ulpi_tx_data[2]#ulpi_tx_data[3]#ulpi_clk#ulpi_tx_data[4]#ulpi_tx_data[5]#ulpi_tx_data[6]#ulpi_tx_data[7]#ulpi_dir#ulpi_stp#ulpi_nxt#clk##detect#cmd#data[0]#data[1]#data[2]#data[3]#sel####rgmii_tx_clk#rgmii_txd[0]#rgmii_txd[1]#rgmii_txd[2]#rgmii_txd[3]#rgmii_tx_ctl#rgmii_rx_clk#rgmii_rxd[0]#rgmii_rxd[1]#rgmii_rxd[2]#rgmii_rxd[3]#rgmii_rx_ctl#wp#buspwr##########################}\
+    CONFIG.PS_PMC_CONFIG(PMC_MIO_TREE_SIGNALS) {qspi0_clk#qspi0_io[1]#qspi0_io[2]#qspi0_io[3]#qspi0_io[0]#qspi0_cs_b#qspi_lpbk#qspi1_cs_b#qspi1_io[0]#qspi1_io[1]#qspi1_io[2]#qspi1_io[3]#qspi1_clk#usb2phy_reset#ulpi_tx_data[0]#ulpi_tx_data[1]#ulpi_tx_data[2]#ulpi_tx_data[3]#ulpi_clk#ulpi_tx_data[4]#ulpi_tx_data[5]#ulpi_tx_data[6]#ulpi_tx_data[7]#ulpi_dir#ulpi_stp#ulpi_nxt#clk##detect#cmd#data[0]#data[1]#data[2]#data[3]#sel##gpio_1_pin[36]##rgmii_tx_clk#rgmii_txd[0]#rgmii_txd[1]#rgmii_txd[2]#rgmii_txd[3]#rgmii_tx_ctl#rgmii_rx_clk#rgmii_rxd[0]#rgmii_rxd[1]#rgmii_rxd[2]#rgmii_rxd[3]#rgmii_rx_ctl#wp#buspwr##########################}\
 \
     CONFIG.PS_PMC_CONFIG(PMC_NOC_PMC_ADDR_WIDTH) {64} \
     CONFIG.PS_PMC_CONFIG(PMC_OSPI_PERIPHERAL) {PRIMARY_ENABLE 0 SECONDARY_ENABLE 0 IO PMC_MIO_0:13 MODE Single} \
@@ -1437,12 +1442,15 @@ MIO} \
   # huins_vp1902_base platform intent (vck190-CED style)
   ############################################################
 
-  # --- Kernel clocks: reconfigure clk_wizard_0 (input pl0_ref_clk 100MHz)
+  # --- Kernel clocks: use the board Clock Module's exact 100MHz LVDS input.
   set_property -dict [list \
     CONFIG.CLKOUT_USED {true,true,true,true,true,true,false} \
     CONFIG.CLKOUT_REQUESTED_OUT_FREQUENCY {100,200,300,400,600,156.25,100} \
-    CONFIG.PRIM_IN_FREQ {99.999001} \
+    CONFIG.PRIM_SOURCE {Differential_clock_capable_pin} \
+    CONFIG.PRIM_IN_FREQ {100.000000} \
   ] $clk_wizard_0
+  connect_bd_intf_net -intf_net CLK0_100M_0_1 [get_bd_intf_ports CLK0_100M] \
+    [get_bd_intf_pins clk_wizard_0/CLK_IN1_D]
 
   # --- Extra proc_sys_reset cells for kernel clocks
   set proc_sys_reset_3x [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_3x ]
@@ -1473,7 +1481,7 @@ MIO} \
     CONFIG.PS_PMC_CONFIG(PS_HSDP_SAME_EGRESS_AS_INGRESS_TRAFFIC) {1}] $ps_wizard_0
   # unified pl0_ref_clk net (100MHz) for control path + NoC aclks
   connect_bd_net -net ps_wizard_0_pl0_ref_clk [get_bd_pins ps_wizard_0/pl0_ref_clk] \
-    [get_bd_pins clk_wizard_0/clk_in1] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
+    [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
     [get_bd_pins proc_sys_reset_1/slowest_sync_clk] \
     [get_bd_pins axi_noc_0/aclk6] [get_bd_pins axi_noc_0/aclk7] [get_bd_pins axi_noc_0/aclk8] \
     [get_bd_pins axi_noc_0/aclk10] [get_bd_pins axi_noc_0/aclk11] \

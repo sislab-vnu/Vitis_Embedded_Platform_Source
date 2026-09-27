@@ -62,6 +62,7 @@ Set up Vitis and select the common-image directory:
 source /home/tools/xilinx/2025.2/Vitis/settings64.sh
 
 cd Xilinx_Official_Platforms/xilinx_zcu106_base
+export PLATFORM_ROOT="$PWD"
 export COMMON_SW=/path/to/xilinx-zynqmp-common-v2025.2
 ```
 
@@ -136,7 +137,7 @@ The principal outputs are:
 Verify the platform before using it:
 
 ```bash
-export XPFM="$PWD/platform_repo/xilinx_zcu106_base_202520_1/export/xilinx_zcu106_base_202520_1/xilinx_zcu106_base_202520_1.xpfm"
+export XPFM="$PLATFORM_ROOT/platform_repo/xilinx_zcu106_base_202520_1/export/xilinx_zcu106_base_202520_1/xilinx_zcu106_base_202520_1.xpfm"
 test -f "$XPFM"
 platforminfo -p "$XPFM"
 ```
@@ -206,6 +207,108 @@ $CXX -std=c++17 -I. \
 Warnings from the sample `logger.cpp` about deprecated `std::ptr_fun` and
 `std::not1` are harmless.
 
+## Enable `pyxrt` with XRT 2.20
+
+The ZynqMP common image 2025.2 already contains these matching target
+packages:
+
+```text
+xrt       202520.2.20.0
+xrt-dev   202520.2.20.0
+zocl      202520.2.20.0
+python3   3.12
+numpy     1.26.4
+```
+
+Do not rebuild or replace those target packages. The embedded XRT build omits
+the `pyxrt` extension, so build that one module against the XRT headers and
+libraries in the common-image SDK.
+
+### Build the matching Python extension
+
+Use the exact XRT PetaLinux tag that matches the target runtime. A module built
+from another XRT release can import successfully at compile time but fail at
+runtime because `libxrt_coreutil` exposes a C++ ABI.
+
+```bash
+export SDK_DIR="$HOME/xilinx-zynqmp-common-v2025.2-sdk"
+export PYXRT_WORK="$PLATFORM_ROOT/app/pyxrt-2.20"
+
+"$COMMON_SW/sdk.sh" -y -d "$SDK_DIR"   # Skip if this SDK is already installed
+mkdir -p "$PYXRT_WORK"
+
+git clone --depth 1 --branch 202520.2.20.0_Petalinux \
+  https://github.com/Xilinx/XRT.git "$PYXRT_WORK/XRT"
+git clone --depth 1 --branch v2.13.6 \
+  https://github.com/pybind/pybind11.git "$PYXRT_WORK/pybind11"
+
+source "$SDK_DIR/environment-setup-cortexa72-cortexa53-amd-linux"
+
+$CXX -std=c++17 -shared -fPIC -fvisibility=hidden -O2 \
+  -I"$SDKTARGETSYSROOT/usr/include/python3.12" \
+  -I"$PYXRT_WORK/pybind11/include" \
+  "$PYXRT_WORK/XRT/src/python/pybind11/src/pyxrt.cpp" \
+  -o "$PYXRT_WORK/pyxrt.cpython-312-aarch64-linux-gnu.so" \
+  -L"$SDKTARGETSYSROOT/usr/lib" \
+  -lxrt_coreutil -luuid -lpthread
+
+export PYXRT_SO="$PYXRT_WORK/pyxrt.cpython-312-aarch64-linux-gnu.so"
+file "$PYXRT_SO"
+readelf -d "$PYXRT_SO"
+```
+
+The `file` output must identify an AArch64 shared object. Its dynamic
+dependencies must include `libxrt_coreutil.so.2` and `libuuid.so.1`.
+
+### Install into a running 2025.2 common image
+
+Copy the module to the board and install it in Python 3.12's target package
+directory:
+
+```bash
+scp "$PYXRT_SO" <user>@<board>:/tmp/
+ssh <user>@<board>
+sudo install -m 0755 \
+  /tmp/pyxrt.cpython-312-aarch64-linux-gnu.so \
+  /usr/lib/python3.12/site-packages/
+
+python3 -c 'import pyxrt; print(pyxrt.enumerate_devices()); pyxrt.device(0)'
+```
+
+The command must print at least one device and exit successfully. The common
+image uses XRT 2.20 from `/usr`, so no `LD_LIBRARY_PATH` override is needed.
+
+### Add `pyxrt` to the packaged root filesystem
+
+To make the installation persistent in `sd_card.img`, copy the extension into
+a working copy of the common-image root filesystem before running `v++ -p`:
+
+```bash
+cd "$PLATFORM_ROOT/app/vadd"
+cp "$COMMON_SW/rootfs.ext4" rootfs-pyxrt.ext4
+mkdir -p rootfs-mnt
+
+sudo mount -o loop rootfs-pyxrt.ext4 rootfs-mnt
+sudo install -D -m 0755 "$PYXRT_SO" \
+  rootfs-mnt/usr/lib/python3.12/site-packages/pyxrt.cpython-312-aarch64-linux-gnu.so
+sudo umount rootfs-mnt
+
+export PYXRT_ROOTFS="$PWD/rootfs-pyxrt.ext4"
+```
+
+Use `$PYXRT_ROOTFS` instead of `$COMMON_SW/rootfs.ext4` in the package command
+below. If a command fails while the image is mounted, unmount `rootfs-mnt`
+before retrying or removing the working image.
+
+### XRT version rule
+
+Do not install this module into a rootfs that uses another XRT version. For
+example, importing it against EDF XRT 2.23 fails with an undefined
+`xrt::module::get_cfg_uuid()` symbol. Boot the matching 2025.2 common image, or
+keep XRT 2.20 and its Python module in a private directory and set both
+`XILINX_XRT` and `LD_LIBRARY_PATH` for that process. Never overwrite a newer
+image's system XRT libraries with selected files from 2.20.
+
 ## Package and Run the Platform
 
 A platform is consumed by `v++`; it is not itself an executable. To boot and
@@ -219,9 +322,10 @@ Return to a shell with the Vitis 2025.2 environment sourced, then run from the
 v++ -p -t hw --platform "$XPFM" \
   --package.boot_mode sd \
   --package.out_dir package.hw \
-  --package.rootfs "$COMMON_SW/rootfs.ext4" \
+  --package.rootfs "${PYXRT_ROOTFS:-$COMMON_SW/rootfs.ext4}" \
   --package.kernel_image "$COMMON_SW/Image" \
   --package.sd_file simple_vadd \
+  --package.sd_file "$PLATFORM_ROOT/examples/pyxrt_vadd.py" \
   -o package.hw/vadd.xclbin vadd.xclbin
 ```
 
@@ -246,12 +350,14 @@ cd /run/media/mmcblk0p1
 xrt-smi examine
 chmod +x simple_vadd
 ./simple_vadd -x vadd.xclbin
+python3 pyxrt_vadd.py vadd.xclbin
 ```
 
 The expected result is:
 
 ```text
 TEST PASSED
+PYXRT VADD TEST PASSED
 ```
 
 `zocl`, the FPGA manager, and a matching XRT userspace must be available. The

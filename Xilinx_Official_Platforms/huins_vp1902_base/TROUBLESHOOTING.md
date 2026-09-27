@@ -477,8 +477,11 @@ or board state.
 
 **Solution**
 
-For cold validation, disconnect the main supply and all USB/JTAG paths, wait at
-least ten seconds, leave the card inserted, and then reconnect. Gate every
+For cold validation, shut down with the front-panel `PWR SW`, switch off and
+unplug the rear ATX PSU, disconnect all USB/JTAG paths, and wait at least ten
+seconds with the card inserted. Reconnect the ATX input, switch on its rear
+rocker, press `PWR SW`, and then reconnect the host paths. Do not operate
+clock-module `SW6`; it configures a clock divider, not board power. Gate every
 Linux test on a successful U-Boot read first.
 
 ### 22. Direct Linux SDHCI register access wedged the A72
@@ -793,6 +796,95 @@ There is no repository fix. Hardware emulation remains unsupported. Direct
 QEMU validates only the PS-side software path and is not a replacement for
 linked PL emulation. Vitis 2025.2 also does not provide `sw_emu` as a fallback.
 
+### 37. An inactive or unforwarding lab path looked like a board network failure
+
+**Symptom**
+
+Linux showed `end0` as `UP` and `LOWER_UP`, carrier 1, full-duplex 1 Gbps, and
+`192.168.1.57/24`, but ARP and ping failed in both directions. TCF was active on
+the board but unreachable through the SSH tunnel.
+
+**Cause**
+
+The board-facing lab-host network was not operational. GEM transmitted packets
+but received none, and the lab adapter did not observe the board's ARP requests.
+The board's `/etc/systemd/network/10-end0.network` file was already selected by
+`systemd-networkd`.
+
+**Solution**
+
+Bring up the board-facing host interface at `192.168.1.1/24` before changing
+board software. Verify carrier, addresses, ARP, and ping from both endpoints.
+Use `NETWORK_BRINGUP_GUIDE.md` for the complete sequence.
+
+**Validation**
+
+In the earlier pre-PHY-reset EDF test, once the host side was running,
+`192.168.1.57` responded with zero packet loss,
+TCP port 1534 accepted connections, and XSDB TCF access confirmed that
+`systemd-networkd` was enabled and active with the persistent `10-end0.network`
+configuration. The static-only file hash
+`555a2d712401d5eec730a7f513fa3925aaa536e4cf8d2615ec990086d054b4dd`
+remained selected with the expected address after a controlled `sudo reboot`
+and a true main-power cold cycle. `systemd-networkd` and `tcf-agent.service`
+both returned active automatically after that historical cold boot. The later
+corrected PHY-reset test used explicit JTAG payload loading; autonomous cold-SD
+deployment of the corrected package remains pending.
+
+### 38. GEM1 PHY reset was not controlled by hardware or Linux
+
+**Symptom**
+
+A later recurrence remained after recycling the dedicated host NetworkManager
+connection, reseating the cable, cold-cycling the board, and cycling `end0`.
+Both PHYs reported 1 Gbps full-duplex carrier, but opposing pings did not
+increment either receive counter; the board reported zero received packets.
+Linux fallback-scanned MDIO address 3 as `Generic Clause 45 PHY` with PHY ID
+`0x00000000`.
+
+**Cause**
+
+The Huins pin map assigns `GEM1_RGMII_RESET` to PMC MIO36. The vendor
+reference's high inactive output establishes active-low polarity, but it
+incorrectly drove MIO37, which the pin map identifies as test point TP1. The
+platform configured MIO36 as an unassigned input, disabled PMC GPIO1, and had no
+explicit GEM1 PHY node or `reset-gpios` property.
+
+**Solution**
+
+Enable PMC GPIO1, configure MIO36 as a GPIO output initially high, and describe
+the reference-design PHY at MDIO address 7. The PHY node uses
+`reset-gpios = <&gpio1 36 GPIO_ACTIVE_LOW>`, asserts reset for 10 ms, and waits
+50 ms after deassertion. Apply the PMC GPIO enable after lopper domain pruning;
+otherwise lopper removes the provider and leaves a dangling reset phandle.
+
+**Validation**
+
+Vivado 2025.2 successfully rebuilt the pre-synthesis XSA. The build extracts the
+XSA's matching `hw_presynth.pdi` rather than reusing an older external PDI. The
+rebuilt DTB contains an enabled `xlnx,pmc-gpio-1.0` provider, GEM1
+`phy-handle`, PHY address 7, and the expected active-low reset/timing cells.
+
+Bootgen accepted a boot image containing only that pre-synthesis PDI, but the
+physical JTAG load failed in PLM with status `0x22390002`. The PDI is a Vitis
+link input, not a standalone boot image. A fresh `v++ -l` implementation
+produced the complete PDI used for validation.
+
+The complete linked PDI and corrected DT booted EDF with the matching
+`6.18.10` kernel. Runtime evidence was:
+
+- `/proc/device-tree` contained the active-low MIO36 `reset-gpios` property.
+- PMC GPIO1 reported `okay`.
+- MDIO address 7 reported PHY ID `0x01410e40` and driver `Marvell 88E1116R`.
+- GEM1 negotiated 1 Gbps full-duplex and both RX and TX counters increased.
+- Board-to-host and host-to-board pings completed without loss.
+- TCF and `zocl` exposed one ready edge device.
+- The matching linked xclbin passed 4096/4096 results with exit code zero.
+
+A common-image `6.12.40` kernel temporarily produced zero XRT devices against
+the EDF `6.18.10` rootfs because no matching `zocl` module was available. Keep
+the kernel, rootfs, XRT, DT, linked PDI, and xclbin as one artifact set.
+
 ## Diagnostic experiments that did not solve the SD problem
 
 The following were useful for narrowing the cause but must not be restored as
@@ -813,6 +905,9 @@ platform fixes:
 | VCK190 split cosimulation DTs | Required missing PMC/PL peers and stalled or asserted |
 | Copying only host and xclbin to stock EDF | No matching linked platform was active |
 | Mixing common-image `zocl` with EDF | Produced missing-module or invalid-module-format errors |
+| Booting EDF userspace with the common-image kernel | Network worked, but `zocl` and `/dev/dri` were absent because kernel modules did not match |
+| Treating `hw_presynth.pdi` as a standalone PDI | PLM rejected the physical JTAG load with status `0x22390002` |
+| Relying on JTAG `device program` to select the runtime DT | U-Boot sourced stale DDR at `scriptaddr`; explicit payload download and `booti` were required |
 | Sending a second APU-only PDI | Failed with wake-up status `0x7DB`; A72 was already awake |
 
 The successful SD runtime combination is DT-only on Linux:
@@ -829,8 +924,11 @@ The U-Boot early host-reset patch remains required.
 
 Use this sequence for every handoff test:
 
-1. Remove the main supply and all USB/JTAG back-power for at least ten seconds.
-2. Leave the card inserted and restore power.
+1. Use the front-panel `PWR SW` to shut down, switch off and unplug the rear ATX
+   PSU, and disconnect all USB/JTAG back-power for at least ten seconds. Do not
+   operate clock-module `SW6`.
+2. Leave the card inserted, reconnect and switch on the ATX PSU, and press the
+   front-panel `PWR SW`.
 3. Start the patched U-Boot with `u-boot.dtb`.
 4. Require `fatload` to return zero.
 5. Require the complete `33083904 bytes read` message; a zero return alone is
@@ -850,12 +948,13 @@ OTAP_DELAY=0x00000040
 Use XSDB with the A72 stopped for register snapshots. Do not inspect the live
 controller through Linux `devmem`.
 
-## Final artifact evidence
+## Artifact evidence
 
-The final validated package was generated from the current UART1-linked XSA and
-the split-console platform export.
+The following historical package predates the GEM1 PHY reset correction. It was
+generated from the UART1-linked XSA and split-console platform export and must
+not be mixed with the corrected artifacts.
 
-| Artifact | SHA-256 |
+| Historical artifact | SHA-256 |
 |---|---|
 | `BOOT.BIN` | `46b66ec59cff67a1f7afbe843ed9fa5b4a4c45c6145c6dd0bd8efaa081531abb` |
 | Linux `system.dtb` | `82c0b40ee47e82adbaf9f26e4d903c594a2a21d7d6bdaf17e2d073c0abe9f461` |
@@ -863,7 +962,20 @@ the split-console platform export.
 | Packaged `vadd.xclbin` | `1ee7e2d0167195d7b7214209bf604082faaea6cab42f01635a1ac18841435dbc` |
 | `simple_vadd` host | `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` |
 
-Do not mix files from earlier linked packages with this validated set.
+The corrected GEM1 reset physical validation used this matched set:
+
+| Corrected artifact | SHA-256 |
+|---|---|
+| Fully linked PDI | `6b317de3ffc77318d31602945f87b2c560e3975c813e9e35be67580b3dd4a69c` |
+| JTAG boot container | `041ff67e6498d6eadf387a87fd3e7a27b32eb77a55a36964b3955cc228d9eaf4` |
+| Linux `system.dtb` | `436268f9e5d7ca839f0d7ff707b30d09032183d5a1d63c83e8b7e714a1ef9d8e` |
+| Matching EDF `Image` | `74979cce50398475713fbca8301cbc0a8dc35e64af4e8d6e55e31f73b323ca59` |
+| Packaged `vadd.xclbin` | `7c5f42a4b1d9086a2e31da92c3dfa5b07f2ee3f8cdbf4b713ea3286a9b9618ad` |
+| `simple_vadd` host | `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` |
+
+Do not mix files between these sets. The corrected JTAG container loaded its
+PDI successfully, while explicit kernel/DT downloads and `booti` supplied the
+deterministic Linux handoff.
 
 ## Remaining limitations
 
@@ -871,8 +983,8 @@ Do not mix files from earlier linked packages with this validated set.
   implemented in Vitis 2025.2.
 - VP1902 has no AI Engines; no AIE domain or example can be added.
 - The third PL-side DDR SODIMM is outside this base platform.
-- PHY, EEPROM, and remaining board-specific peripheral DT nodes need confirmed
-  wiring data before they can be added.
+- EEPROM and remaining board-specific peripheral DT nodes need confirmed wiring
+  data before they can be added.
 - Exact SW1 settings, QSPI boot, and a clean generic SD-card image boot remain
   to be recorded per board revision.
 - Existing EDF cards without the patched U-Boot and conservative Linux SD DT

@@ -13,7 +13,11 @@ boot media available while testing it.
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for symptoms, root causes,
 confirmed fixes, rejected experiments, and remaining limitations from the
 platform bring-up. See [JTAG_XSDB_GUIDE.md](JTAG_XSDB_GUIDE.md) for JTAG target
-control, SD diagnostics, and the recovery decision tree.
+control, SD diagnostics, and the recovery decision tree. See
+[TCF_TUNNEL_GUIDE.md](TCF_TUNNEL_GUIDE.md) for unattended upload and execution
+of a program/xclbin pair through an SSH tunnel, and
+[NETWORK_BRINGUP_GUIDE.md](NETWORK_BRINGUP_GUIDE.md) for persistent board and
+lab-host network setup.
 
 ## Prerequisites
 
@@ -44,9 +48,8 @@ test -f "$COMMON_SW/sdk.sh"
 
 `make linux` creates `PLATFORM_ROOTFS` from the common-image root filesystem,
 installs the platform's `10-end0.network`, and enables the custom UART1 getty.
-GEM requests DHCP with route metric 100 while retaining `192.168.1.57/24` and
-gateway `192.168.1.1` at metric 2048 as the deterministic fallback. The input
-common image remains unchanged.
+GEM uses the deterministic address `192.168.1.57/24` and gateway
+`192.168.1.1`. The input common image remains unchanged.
 
 The internal Vitis 2025.2 platform suffix is `202520_1`, not `202520_2`.
 
@@ -63,7 +66,7 @@ The internal Vitis 2025.2 platform suffix is `202520_1`, not `202520_2`.
 | Kernel clocks | 100, 200, 300, 400, and 600 MHz; 100 MHz is the default |
 | Board I/O | SD1, dual-parallel QSPI, USB 2.0 ULPI, GEM1 RGMII, EMIO MDIO, UART0/1, and I2C0/1 |
 | Linux artifacts | Generated system DTB plus Versal common-image kernel, root filesystem, TF-A, and U-Boot |
-| Default access | UART1 U-Boot, earlycon, and getty at 115200; GEM DHCP with `192.168.1.57/24` static fallback |
+| Default access | UART1 U-Boot, earlycon, and getty at 115200; GEM at static `192.168.1.57/24` |
 | AI Engine | Not available on Versal Premium Gen1 |
 | PL DDR SODIMM | Not exposed by this base platform |
 | Hardware emulation | Not supported for this part in Vitis 2025.2 because the `ps_wizard` TLM model is unavailable |
@@ -102,6 +105,7 @@ The principal outputs are:
 | Output | Path |
 |---|---|
 | Hardware XSA | `hw/build/hw.xsa` |
+| Matching hardware PDI | `hw/build/hw.pdi` |
 | U-Boot control DTB | `sw/build/platform/boot/u-boot.dtb` |
 | Linux runtime DTB | `sw/build/platform/image/system.dtb` |
 | Platform files | `platform_repo/huins_vp1902_base_202520_1/export/huins_vp1902_base_202520_1/` |
@@ -187,17 +191,27 @@ make clean
 make all PRE_SYNTH=FALSE PREBUILT_LINUX_PATH="$COMMON_SW"
 ```
 
-This produces `hw/build/hw.pdi` beside `hw/build/hw.xsa`. To create a standalone
-base `BOOT.BIN` from that PDI:
+The pre-synthesis flow extracts the XSA's embedded `hw_presynth.pdi` to
+`hw/build/hw.pdi`; the post-implementation flow writes the implemented PDI at
+the same path. This keeps the platform input paired with its XSA, but the
+pre-synthesis PDI is not a standalone board boot image. It failed a physical
+JTAG load and must only be used as the input to `v++ -l`.
+
+To create a standalone base `BOOT.BIN`, first build the optional implemented
+base and keep `PRE_SYNTH=FALSE` on the boot-image command:
 
 ```bash
-make -C sw/prebuilt_linux bootimage \
+make -C sw/prebuilt_linux bootimage PRE_SYNTH=FALSE \
   XSA="$PLATFORM_ROOT/hw/build/hw.xsa" \
   PREBUILT_LINUX_PATH="$COMMON_SW"
 ```
 
 The result is `sw/build/platform/boot/BOOT.BIN`. This image represents the
-implemented base design without an application kernel.
+implemented base design without an application kernel. The Makefile rejects
+this target unless `hw.pdi.mode` proves that the PDI came from a
+`PRE_SYNTH=FALSE` hardware build. The hardware Makefile forces an XSA rebuild
+when `PRE_SYNTH` differs from that recorded mode, preventing a variable-only
+mode change from reusing the pre-synthesis XSA.
 
 If this optional build replaced the standard platform and the next step is an
 application link, recreate the pre-synthesis platform first:
@@ -933,8 +947,9 @@ never copy selected XRT libraries or kernel modules between images.
   generated `ps_wizard:1.0` TLM model reports that the device is unsupported.
 - The third, PL-side DDR SODIMM is not part of the base platform.
 - Versal Premium Gen1 has no AI Engine, so there is no AIE domain or AIE example.
-- The generated device tree covers the validated base path. Board-specific PHY,
-  EEPROM, and remaining peripheral nodes need exact wiring data before addition.
+- The generated device tree covers the validated base path, including GEM1 PHY
+  address and reset wiring. EEPROM and remaining peripheral nodes need exact
+  wiring data before addition.
 - SD, QSPI, and JTAG are hardware boot selections. Exact SW1 settings and the
   clean generic `v++ --package` SD deployment remain board-validation items.
 - Existing EDF images can leave the card uninitialized with U-Boot error `-110`;

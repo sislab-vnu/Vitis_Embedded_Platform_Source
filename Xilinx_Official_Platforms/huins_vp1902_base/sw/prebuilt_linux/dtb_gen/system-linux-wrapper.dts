@@ -1,0 +1,2 @@
+/include/ "system-domain-linux.dts"
+/include/ "../user_dts/system-user-post.dtsi"

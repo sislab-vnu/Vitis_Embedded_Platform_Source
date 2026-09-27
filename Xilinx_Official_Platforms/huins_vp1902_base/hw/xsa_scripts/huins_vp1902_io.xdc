@@ -1,6 +1,10 @@
 # Pin source: Huins MFP-VP1902-S User's Guide, Table 24, pages 46-47.
-# These XIO peripheral signals are all in 1.8 V HDIO bank 408.
 
+# Clock Module CLK0 PL reference output; XPIO bank 706 is 1.5 V by default.
+set_property -dict {PACKAGE_PIN CR58 IOSTANDARD LVDS15} [get_ports CLK0_100M_clk_p]
+set_property -dict {PACKAGE_PIN CR57 IOSTANDARD LVDS15} [get_ports CLK0_100M_clk_n]
+
+# These XIO peripheral signals are all in 1.8 V HDIO bank 408.
 set_property -dict {PACKAGE_PIN BM13 IOSTANDARD LVCMOS18} [get_ports GEM1_MDIO_mdc]
 set_property -dict {PACKAGE_PIN BL13 IOSTANDARD LVCMOS18} [get_ports GEM1_MDIO_mdio_io]
 

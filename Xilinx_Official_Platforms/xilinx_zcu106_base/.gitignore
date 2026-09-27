@@ -1,4 +1,5 @@
 platform_repo/
+app/
 sw/build/
 hw/build/
 vivado.*

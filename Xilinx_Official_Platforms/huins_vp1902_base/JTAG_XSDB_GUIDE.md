@@ -18,6 +18,7 @@ device-control commands while retaining the Vitis scripting environment.
 |---|---|
 | Connect to the VP1902 through `hw_server` | Validated |
 | Program a complete `BOOT.BIN` through JTAG | Validated |
+| Boot a matched kernel and DT with explicit `booti` payloads | Validated |
 | Load the checked-in Linux rescue flow | Validated |
 | Inspect and recover a powered SD card | Validated |
 | Enter EDF with `kexec` after card recovery | Validated |
@@ -56,7 +57,9 @@ The Huins user guide identifies these controls:
 | Item | Purpose |
 |---|---|
 | `J16` | 12 V DC input, at least 4 A |
-| `SW6` | Board power switch |
+| Front-panel `PWR SW` | System power push button |
+| Rear ATX PSU rocker | Disconnects the main power source |
+| Clock-module `SW6` | Programs the `CLK3` `M[7:0]` divider; not a power switch |
 | `D_LED1` | Power indicator |
 | `J21` | CP210 USB UART |
 | `J22` | Digilent/VCON USB JTAG |
@@ -78,14 +81,18 @@ before relying on autonomous SD boot. The exact switch positions used during
 the recorded platform validation were not captured.
 
 USB UART and JTAG can back-power part of the board or SD interface. A true cold
-reset requires turning off the main supply and disconnecting both USB paths for
-at least ten seconds.
+reset requires shutting down with the front-panel `PWR SW`, switching off and
+unplugging the rear ATX PSU, and disconnecting both USB paths for at least ten
+seconds. Do not change clock-module `SW6` as part of a power cycle.
 
 For an autonomous SD-boot trial, power everything down, set SW1 to the vendor's
-SD 3.0 position, insert the card, and restore the 12 V supply before attaching
-the host tools. For a JTAG-controlled trial, use the vendor's JTAG position and
-program a complete image as described below. Do not test QSPI until a separate
-flash backup and restore procedure has been established.
+SD 3.0 position, insert the card, reconnect and switch on the rear ATX PSU, and
+press the front-panel `PWR SW`. Attach the host tools only after the complete
+power-removal interval; reconnect J21 before pressing `PWR SW` only when capture
+of the earliest UART output is required. For a JTAG-controlled trial, use the
+vendor's JTAG position and program a complete image as described below. Do not
+test QSPI until a separate flash backup and restore procedure has been
+established.
 
 ## Prepare the host
 
@@ -208,6 +215,15 @@ Boot PDI Load: Done
 ```
 
 `device program` is volatile. It does not copy `BOOT.BIN` to the SD card.
+
+In JTAG boot mode, U-Boot tries `bootcmd_jtag` before MMC and sources the memory
+at `scriptaddr`. A logical device reset does not clear DDR, so that address can
+still contain a script from an earlier run. PLM success and a running Linux
+system therefore do not prove that the newly programmed image supplied the
+kernel or runtime DT. For deterministic validation, use the checked-in rescue
+flow, explicitly download the matching kernel and DT, and invoke `booti` with
+the downloaded DT address. Do not infer artifact identity from network reachability
+alone.
 
 ### Stop and resume the A72
 
@@ -546,7 +562,9 @@ address in the xclbin is not reachable in the active hardware. Verify that the
 linked `BOOT.BIN`, DT, and xclbin came from the same current package. Do not use
 the superseded September 1 linked artifact.
 
-The final matched package has these recorded SHA-256 values:
+The pre-PHY-reset UART1 package had these recorded SHA-256 values. Keep this
+table only for reproducing that historical SD/UART validation; it is not the
+corrected GEM1 reset artifact set.
 
 | Artifact | SHA-256 |
 |---|---|
@@ -555,6 +573,21 @@ The final matched package has these recorded SHA-256 values:
 | Common-image `Image` | `79359c3f0af65cef3dbabab725b156a4b7b1925f781ab42f2f997be70f6dc86c` |
 | Packaged `vadd.xclbin` | `1ee7e2d0167195d7b7214209bf604082faaea6cab42f01635a1ac18841435dbc` |
 | `simple_vadd` host | `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` |
+
+The corrected GEM1 reset physical validation used:
+
+| Artifact | SHA-256 |
+|---|---|
+| Fully linked PDI | `6b317de3ffc77318d31602945f87b2c560e3975c813e9e35be67580b3dd4a69c` |
+| JTAG boot container | `041ff67e6498d6eadf387a87fd3e7a27b32eb77a55a36964b3955cc228d9eaf4` |
+| Linux `system.dtb` | `436268f9e5d7ca839f0d7ff707b30d09032183d5a1d63c83e8b7e714a1ef9d8e` |
+| Matching EDF `Image` | `74979cce50398475713fbca8301cbc0a8dc35e64af4e8d6e55e31f73b323ca59` |
+| Packaged `vadd.xclbin` | `7c5f42a4b1d9086a2e31da92c3dfa5b07f2ee3f8cdbf4b713ea3286a9b9618ad` |
+| `simple_vadd` host | `00b461ecde580d7cfd0a07b71b780c8b59fea4640cdaa3d9b6690ef3be498a33` |
+
+The JTAG container loaded the complete PDI successfully, but deterministic
+Linux validation required explicit kernel and DT downloads followed by
+`booti`; see the `scriptaddr` warning above.
 
 Hash the actual files before deployment. A matching filename is not sufficient
 evidence.
@@ -590,15 +623,18 @@ Use complete power removal when any of these are true:
 Procedure:
 
 1. Stop XSDB commands and close UART programs that own the cable.
-2. Turn off SW6 and remove the 12 V input.
-3. Disconnect J21 and J22.
-4. Wait at least ten seconds.
-5. Leave the SD card inserted unless the recovery procedure explicitly calls
+2. Press the front-panel `PWR SW` to shut down the system.
+3. Switch off the rear ATX PSU rocker and unplug its AC input.
+4. Disconnect J21 and J22. Do not operate clock-module `SW6`.
+5. Wait at least ten seconds.
+6. Leave the SD card inserted unless the recovery procedure explicitly calls
    for powered reinsertion later.
-6. Reconnect power, UART, and JTAG.
-7. Start `hw_server` and reconnect XSDB.
-8. Retry one known-good complete `BOOT.BIN`.
-9. Check `plm log` before taking another action.
+7. Reconnect the ATX input, switch on its rear rocker, and press the front-panel
+   `PWR SW`.
+8. Reconnect UART and JTAG.
+9. Start `hw_server` and reconnect XSDB.
+10. Retry one known-good complete `BOOT.BIN`.
+11. Check `plm log` before taking another action.
 
 A logical reset did not clear the observed stale PMC/CDO state.
 

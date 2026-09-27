@@ -2,13 +2,5 @@
 Name=end0
 
 [Network]
-DHCP=ipv4
 Address=192.168.1.57/24
-DNS=8.8.8.8
-
-[DHCPv4]
-RouteMetric=100
-
-[Route]
 Gateway=192.168.1.1
-Metric=2048

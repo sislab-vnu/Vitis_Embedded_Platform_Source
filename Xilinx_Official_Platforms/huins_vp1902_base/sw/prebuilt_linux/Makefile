@@ -15,7 +15,11 @@ ROOTFS_PREPARE_SCRIPT  = $(CWD)/prepare_rootfs.sh
 #SYSTEM_CONF_DTS  = $(CWD)/user_dts/system-conf.dtsi
 PDI_FILE         = $(SW_DIR)/hw.pdi
 HW_PDI          ?= $(dir $(XSA))hw.pdi
+HW_PDI_MODE     ?= $(dir $(XSA))hw.pdi.mode
 DTB_PATH         = $(CWD)/dtb_gen
+DTB_GEN_SOURCES  = $(DTB_PATH)/Makefile \
+	$(DTB_PATH)/system-linux-wrapper.dts \
+	$(CWD)/user_dts/system-user-post.dtsi
 
 
 .PHONY: check-vitis check-prebuilt all sw_comp dtb bootimage clean
@@ -32,19 +36,21 @@ $(UBOOT_DTB_FILE): $(XSA) $(UBOOT_SYSTEM_USER_DTSI) $(DTB_PATH)/Makefile | check
 
 	$(MAKE) -C dtb_gen all XSA="$(XSA)" \
 		USER_DTSI="$(UBOOT_SYSTEM_USER_DTSI)" \
-		SDT_OUT="sdt_out_uboot" DTB_OUT="system-uboot.dtb"
+		SDT_OUT="sdt_out_uboot" DTB_OUT="system-uboot.dtb" \
+		DOMAIN_DTS="system-domain-uboot.dts" POST_DTSI=
 
 	@if [ ! -f $(DTB_PATH)/system-uboot.dtb ]; then echo -e "ERROR: U-Boot device tree generation failed\n"; exit 1; fi
 	cp $(DTB_PATH)/system-uboot.dtb $(UBOOT_DTB_FILE) -v
 
-$(LINUX_DTB_FILE): $(XSA) $(SYSTEM_USER_DTSI) $(DTB_PATH)/Makefile | check-vitis
+$(LINUX_DTB_FILE): $(XSA) $(SYSTEM_USER_DTSI) $(DTB_GEN_SOURCES) | check-vitis
 	$(info "Generating SW Artifacts...")
 	@if [ ! -d $(IMAGE_DIR) ]; then mkdir -p $(IMAGE_DIR); fi
 	$(info "Linux DTB generation started using sdtgen+lopper")
 
 	$(MAKE) -C dtb_gen all XSA="$(XSA)" \
 		USER_DTSI="$(SYSTEM_USER_DTSI)" \
-		SDT_OUT="sdt_out_linux" DTB_OUT="system-linux.dtb"
+		SDT_OUT="sdt_out_linux" DTB_OUT="system-linux.dtb" \
+		DOMAIN_DTS="system-domain-linux.dts"
 
 	@if [ ! -f $(DTB_PATH)/system-linux.dtb ]; then echo -e "ERROR: Linux device tree generation failed\n"; exit 1; fi
 	cp $(DTB_PATH)/system-linux.dtb $(LINUX_DTB_FILE) -v
@@ -67,7 +73,12 @@ $(PDI_FILE): $(XSA)
 	@if [ ! -f "$(HW_PDI)" ]; then echo "ERROR: Post-implementation PDI not found at $(HW_PDI)"; exit 1; fi
 	cp -f $(HW_PDI) $(PDI_FILE)
 
-bootimage: $(BOOT_IMAGE)
+bootimage:
+	@if [ ! -f "$(HW_PDI_MODE)" ] || [ "$$(cat "$(HW_PDI_MODE)")" != "FALSE" ]; then \
+		echo "ERROR: Standalone boot requires a PDI produced by a clean PRE_SYNTH=FALSE hardware build."; \
+		exit 1; \
+	fi
+	$(MAKE) $(BOOT_IMAGE)
 
 $(BOOT_IMAGE): $(PDI_FILE) $(SW_FILES)
 	$(info "BOOT image for platforms")

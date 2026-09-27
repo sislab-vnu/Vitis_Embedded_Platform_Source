@@ -3,9 +3,11 @@
 ***Version: 2025.2 (202520_1)*** | **Status: hardware link and core physical-board flow verified**
 
 See [USAGE.md](USAGE.md) for build and deployment commands,
-[JTAG_XSDB_GUIDE.md](JTAG_XSDB_GUIDE.md) for board control and recovery, and
-[TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the complete problem and solution
-record.
+[TCF_TUNNEL_GUIDE.md](TCF_TUNNEL_GUIDE.md) for remotely uploading and running a
+program/xclbin pair, [NETWORK_BRINGUP_GUIDE.md](NETWORK_BRINGUP_GUIDE.md) for
+systemd and lab-host network setup, [JTAG_XSDB_GUIDE.md](JTAG_XSDB_GUIDE.md) for
+board control and recovery, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the
+complete problem and solution record.
 
 Site addition on the `2025.2-sislab` branch: an extensible Vitis base platform for the
 custom Huins board built around the **Versal Premium `xcvp1902`** device. Ported from
@@ -52,6 +54,7 @@ Board facts extracted from `huins_mfp-vp1902_userguide.pdf` (Huins MFP-VP1902-S)
 | USB | `PS_USB3_PERIPHERAL` on PMC MIO 13:25 (USB-2.0 ULPI PHY, no GT) |
 | UART0/1, I2C0/1 | **EMIO**, LVCMOS18 (UART1 console on CP210 XIO BK13/BL14; UART0 XIO BK17/BL18; UART 115200; I2C0 XIO BM17/BM18, I2C1 BL16/BM16) |
 | PL clocks (ps_wizard) | PL0 100 / PL1 300 / PL2 200 / PL3 125 MHz; NOC ref 1000 MHz |
+| Kernel clock reference | Clock Module CLK0, 100 MHz LVDS15 on XPIO `CR58`/`CR57`; produces exact 100/200/300/400/600 MHz kernel-clock metadata |
 | DDR4 NoC | `axi_noc:1.1`, DDR4_SDRAM, `SODIMMs`, `DDR4-3200AA(22-22-22)`, RANK 2, NUM_MC 2 / NUM_MCP 2, NUM_SI 10, NUM_CLKS 12; DDR sys clocks are **external ports** `C0_DDR4_SYS`/`C1_DDR4_SYS` (board 200 MHz OSCs) |
 | Boot | JTAG/QSPI/SD selectable (SW1) |
 | AI Engine | none (Versal Premium Gen1) |
@@ -69,17 +72,39 @@ console stopped normal Linux boot during serial-driver handoff. The previous
 attempt to remap UART0 to the CP210 pins produced a silent console in the final
 linked PDI.
 
-The prepared Linux root filesystem requests DHCP on GEM interface `end0`,
-retains `192.168.1.57/24` with a lower-priority fallback route, and enables the
-custom `huins-uart-getty.service` on `ttyAMA1`. Packaged images therefore have
-CP210 login and network access enabled by default.
+The prepared Linux root filesystem assigns `192.168.1.57/24` with gateway
+`192.168.1.1` to GEM interface `end0` and enables the custom
+`huins-uart-getty.service` on `ttyAMA1`. Packaged images therefore have CP210
+login and deterministic network access enabled by default.
+
+### Kernel clock setup
+
+Before loading a linked PDI, configure Clock Module CLK0 for 100 MHz and route
+it to the FPGA as LVDS:
+
+- Clock Module `SW1` (`M[7:0]`, switch 1 is the MSB): off, off, off,
+  on, on, off, off, on. This selects `M=25`.
+- Clock Module `SW3` (switches 1 through 4 are `N1`, `N0`, `BYPASS`,
+  and `M8`): off, on, on, off. This selects `N=1`, `M8=0`, and clock
+  output by `SW(M,N)`.
+- Main board `SW209`: select the Clock Module (`SW209-1` off), select LVDS
+  (`SW209-3` on), and enable the output (`SW209-4` off).
+- Keep the FMC+ "01" XPIO banks, including bank 706, at the board-default
+  1.5 V setting required by `LVDS15`.
+
+This external reference is required because the nominal PS 100 MHz PL clock is
+`99.999001 MHz` with the board's 33.333 MHz PMC reference. An MMCM can only
+produce `199.998002 MHz` from that source; changing only the declared input
+frequency would make timing metadata disagree with the physical clock.
+Vivado synthesis, implementation DRC, and I/O/global-clock placement accept
+the new path; board-level frequency measurement remains pending.
 
 The manually rebuilt BD generates the hardware XSA and forces inclusion of the
 Versal pre-synthesis PDI. Remaining board-validation items:
 
 1. **Device tree**: SDT is generated from the XSA without borrowing another
-   board's DTS. Add Huins-specific PHY, EEPROM, and other board-level nodes when
-   their exact wiring is available.
+   board's DTS. GEM1 PHY address and reset wiring are now validated; add EEPROM
+   and other board-level nodes when their exact wiring is available.
 2. **Physical validation**: EMIO console, SD detection, GEM link, DDR, and a
    linked `vadd` application are validated; confirm deployment boot modes and
    the remaining board peripherals.
@@ -130,6 +155,36 @@ reinserting the card while rescue Linux remained powered caused immediate
 image. See [JTAG_XSDB_GUIDE.md](JTAG_XSDB_GUIDE.md) for the complete board-control
 and recovery procedure.
 
+### GEM1 PHY reset
+
+The Huins pin map connects `GEM1_RGMII_RESET` to PMC MIO36. The vendor
+reference configures the reset output's inactive level high, establishing its
+active-low polarity. The hardware design enables PMC GPIO1 and initializes
+MIO36 high. The Linux device tree describes the GEM1 PHY at the
+reference-design MDIO address 7 and requests MIO36 through the PMC GPIO
+controller. During PHY probe, Linux asserts reset for 10 ms and waits 50 ms
+after deassertion before accessing the PHY; this occurs before
+`systemd-networkd` configures `end0`.
+
+The SDT domain-generation pass prunes an enabled PMC GPIO node before applying
+board data, so `system-user-post.dtsi` enables that controller after lopper has
+generated the A72 domain tree. The resulting DTB has a valid `reset-gpios`
+phandle.
+
+Physical validation used a fully linked Vitis PDI, the matching Linux DT, and
+the EDF kernel matching the installed XRT stack. Linux found PHY ID
+`0x01410e40` at MDIO address 7, bound `Marvell 88E1116R`, negotiated 1 Gbps
+full-duplex, received traffic without errors, and passed bidirectional ping.
+TCF remained reachable and the matching `vadd` package completed with
+`Mismatches: 0/4096` and `TEST PASSED`.
+
+For pre-synthesis builds, the hardware Makefile extracts the matching
+`hw_presynth.pdi` from the XSA as `hw/build/hw.pdi` for platform generation.
+That small PDI is an application-link input, not a standalone board boot image;
+a physical JTAG trial failed during PDI loading. Use a post-implementation base
+PDI or the complete PDI produced by `v++ -l` for board programming. A clean
+cold boot of the corrected linked package from SD remains pending.
+
 ### SD firmware handoff correction
 
 The platform now generates separate device trees for the two software stages.
@@ -153,8 +208,10 @@ U-Boot's 25 MHz state to 50 MHz caused the first post-switch command to time out
 With `no-1-8-v`, `max-frequency = <25000000>`, and
 `clk-phase-sd-hs = <0>, <0>`, Linux enumerated the 59.5 GiB SDXC card and all
 three partitions immediately after U-Boot read a 33,083,904-byte image from it.
-Five consecutive full-power cold boots reproduced the complete U-Boot read and
-Linux enumeration without an MMC error.
+Five consecutive full-power cold boots of this SD handoff test reproduced the
+complete U-Boot read and Linux enumeration without an MMC error. This predates
+the GEM1 reset correction and does not replace the pending cold-SD test of the
+new linked package.
 
 ## Hardware-emulation limitation
 
